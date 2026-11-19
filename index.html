@@ -7,6 +7,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- ספריית PDF.js לחילוץ טקסט מהיר מקומית בדפדפן (עובד גם מקובץ מקומי file://) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Assistant', sans-serif; background-color: #f3f4f6; }
@@ -24,6 +27,9 @@
         <div id="loadingText" class="text-white text-xl font-bold text-center flex flex-col items-center max-w-lg">
             מעבד נתונים...
         </div>
+        <button id="cancelUploadBtn" onclick="cancelCurrentUpload()" class="mt-6 px-5 py-2 bg-white bg-opacity-15 hover:bg-opacity-25 text-white border border-white border-opacity-40 rounded-lg text-sm font-semibold transition-colors">
+            ביטול פעולה
+        </button>
     </div>
 
     <!-- חלון הגדרות API Key -->
@@ -141,6 +147,7 @@
 
     <script>
         let mockData = { totalReports: 0, lastUpdate: '-', pieChartData: [0, 0], funnelData: [0, 0, 0], agencyData: [0, 0, 0, 0, 0], conceptData: [], frictionLoops: 0, quotes: [], insights: [] };
+        let currentAbortController = null;
 
         function openApiModal() {
             document.getElementById('apiKeyInput').value = localStorage.getItem('gemini_api_key') || '';
@@ -159,6 +166,37 @@
             }
         }
 
+        function cancelCurrentUpload() {
+            if (currentAbortController) {
+                currentAbortController.abort();
+                currentAbortController = null;
+            }
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+
+        // חילוץ טקסט מהיר מקובץ PDF מקומית בדפדפן
+        async function extractTextFromPDF(file) {
+            try {
+                if (typeof pdfjsLib === 'undefined') return null;
+                const arrayBuffer = await file.arrayBuffer();
+                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                const pdf = await loadingTask.promise;
+                let fullText = '';
+                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                    const page = await pdf.getPage(pageNum);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    fullText += pageText + '\n';
+                }
+                const cleaned = fullText.replace(/\s+/g, ' ').trim();
+                // אם יש פחות מ-50 תווים, כנראה שזה קובץ סרוק כתמונה -> נחזיר null כדי להשתמש בגיבוי
+                return cleaned.length >= 50 ? cleaned : null;
+            } catch (err) {
+                console.warn('חילוץ טקסט נכשל עבור', file.name, '- עובר לשליחה כקובץ PDF מלא:', err);
+                return null;
+            }
+        }
+
         function triggerUpload(type) {
             const apiKey = localStorage.getItem('gemini_api_key');
             if (!apiKey) {
@@ -172,19 +210,20 @@
             input.accept = '.pdf';
             
             input.onchange = async (e) => {
-                const files = e.target.files;
+                const files = Array.from(e.target.files);
                 if(files.length > 0) {
                     const loadingOverlay = document.getElementById('loadingOverlay');
                     const loadingText = document.getElementById('loadingText');
                     const spinner = document.getElementById('loadingSpinner');
+                    const cancelBtn = document.getElementById('cancelUploadBtn');
                     
+                    currentAbortController = new AbortController();
                     loadingOverlay.style.display = 'flex';
                     spinner.style.display = 'block';
-                    loadingText.innerHTML = `<span class="text-2xl font-bold mb-2">הבינה המלאכותית מנתחת ${files.length} משובים...</span><span class="text-lg font-normal text-blue-200">קורא טקסטים ומפיק תובנות פדגוגיות</span>`;
+                    cancelBtn.style.display = 'inline-block';
                     
                     try {
-                        const base64Files = await Promise.all(Array.from(files).map(file => getBase64(file)));
-                        
+                        // שלב 1: חילוץ טקסט מהיר בדפדפן
                         const parts = [
                             {
                                 text: `תפקיד: אתה מנתח נתונים פדגוגי. קיבלת תמלולי שיחות של סטודנטיות מול בוט לניתוח טקסטים ספרותיים.
@@ -200,19 +239,44 @@
                             }
                         ];
 
-                        base64Files.forEach(file => {
-                            parts.push({
-                                inline_data: {
-                                    mime_type: "application/pdf",
-                                    data: file.base64
-                                }
-                            });
-                        });
+                        let extractedCount = 0;
+                        let fallbackPdfCount = 0;
+
+                        for (let i = 0; i < files.length; i++) {
+                            const file = files[i];
+                            loadingText.innerHTML = `<span class="text-2xl font-bold mb-2">שלב 1 מתוך 2: קורא משובים (${i + 1}/${files.length})</span><span class="text-base font-normal text-blue-200">מחלץ טקסט מהיר מהקובץ ${file.name}...</span>`;
+                            
+                            const text = await extractTextFromPDF(file);
+                            if (text) {
+                                extractedCount++;
+                                parts.push({
+                                    text: `\n--- תמלול משוב #${i + 1} (${file.name}) ---\n${text}`
+                                });
+                            } else {
+                                // גיבוי אוטומטי לקבצים סרוקים
+                                fallbackPdfCount++;
+                                const base64Obj = await getBase64(file);
+                                parts.push({
+                                    inline_data: {
+                                        mime_type: "application/pdf",
+                                        data: base64Obj.base64
+                                    }
+                                });
+                            }
+                        }
+
+                        // שלב 2: שליחה מהירה ל-Gemini
+                        const modeNote = fallbackPdfCount === 0
+                            ? `מצב מהיר פעיל (${extractedCount} קבצים חולצו לטקסט נקי)`
+                            : `מנתח ${extractedCount} קובצי טקסט ו-${fallbackPdfCount} קבצים סרוקים`;
+
+                        loadingText.innerHTML = `<span class="text-2xl font-bold mb-2">שלב 2 מתוך 2: מנתח תובנות ב-Gemini AI...</span><span class="text-base font-normal text-blue-200">${modeNote}</span>`;
 
                         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
                         const response = await fetch(url, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
+                            signal: currentAbortController.signal,
                             body: JSON.stringify({
                                 contents: [{ parts }],
                                 generationConfig: { response_mime_type: "application/json" }
@@ -249,14 +313,22 @@
                         }
                         
                         spinner.style.display = 'none';
+                        cancelBtn.style.display = 'none';
                         loadingText.innerHTML = `<span class="text-3xl font-black text-green-400 mb-2">הושלם בהצלחה!</span><span class="text-lg text-white">עובדו ${files.length} משובים.</span>`;
-                        setTimeout(() => { loadingOverlay.style.display = 'none'; }, 2000);
+                        setTimeout(() => { loadingOverlay.style.display = 'none'; }, 1500);
 
                     } catch (error) {
+                        if (error.name === 'AbortError') {
+                            console.log('הפעולה בוטלה על ידי המשתמשת.');
+                            return;
+                        }
                         console.error('שגיאה:', error);
                         spinner.style.display = 'none';
+                        cancelBtn.style.display = 'none';
                         loadingText.innerHTML = `<span class="text-3xl font-black text-red-400 mb-2">אופס, משהו השתבש</span><span class="text-base font-normal text-white mt-2">${error.message}</span>`;
                         setTimeout(() => { loadingOverlay.style.display = 'none'; }, 4500);
+                    } finally {
+                        currentAbortController = null;
                     }
                 }
             };
