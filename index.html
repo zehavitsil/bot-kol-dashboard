@@ -245,7 +245,7 @@
                         initCharts();
                         populateTextData();
                         if (window.saveDashboardToFirebase) {
-                            await window.saveDashboardToFirebase(mockData);
+                            window.saveDashboardToFirebase(mockData);
                         }
                         
                         spinner.style.display = 'none';
