@@ -1,455 +1,1034 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>בוט-קול | דשבורד מרצים</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <!-- ספריית PDF.js לחילוץ טקסט מהיר מקומית בדפדפן (עובד גם מקובץ מקומי file://) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Assistant', sans-serif; background-color: #f3f4f6; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .dropdown-container:hover .dropdown-menu { display: block; }
-        .dropdown-menu { display: none; top: 100%; padding-top: 0.5rem; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>בוט-קול | דשבורד אנליטיקת למידה למרצים</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Assistant', 'sans-serif'] },
+        colors: {
+          brand: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81' }
+        }
+      }
+    }
+  };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<style>
+  body { font-family: 'Assistant', sans-serif; background: #f1f5f9; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .tab-btn.active { background: #4f46e5; color: #fff; box-shadow: 0 4px 14px -4px rgba(79,70,229,.55); }
+  .spinner {
+    width: 64px; height: 64px; border-radius: 50%;
+    border: 6px solid #e0e7ff; border-top-color: #4f46e5; border-left-color: #10b981;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .fade-in { animation: fadeIn .25s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  .chart-box { position: relative; height: 300px; }
+  /* export mode: show every tab, hide actions */
+  body.exporting .tab-panel { display: block !important; }
+  body.exporting .no-print { display: none !important; }
+  body.exporting .print-only { display: block !important; }
+  /* 1077px = printable width of A4 landscape (297mm - 2x6mm margins) at 96dpi */
+  body.exporting #report { width: 1077px; max-width: none; box-sizing: border-box; background: #f1f5f9; padding: 8px; }
+  /* tiny letter-spacing forces html2canvas to place each glyph exactly -> keeps Hebrew word spacing intact */
+  body.exporting #report, body.exporting #report * { letter-spacing: 0.15px !important; }
+  body.exporting #tab1 > .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  body.exporting #tab1 > .grid > .lg\:col-span-2 { grid-column: span 1 / span 1; }
+  body.exporting .chart-box { height: 270px; }
+  body.exporting .card { box-shadow: none !important; }
+  .print-only { display: none; }
+  .pdf-section-title { display: none; }
+  body.exporting .pdf-section-title { display: block; }
+</style>
 </head>
-<body class="text-gray-800">
+<body class="min-h-screen text-slate-800">
 
-    <!-- מסך טעינה -->
-    <div id="loadingOverlay" class="fixed inset-0 bg-blue-900 bg-opacity-95 z-50 flex flex-col items-center justify-center hidden transition-opacity duration-300 px-4">
-        <div id="loadingSpinner" class="loader mb-4 border-4 border-blue-400 border-t-white rounded-full w-12 h-12 animate-spin"></div>
-        <div id="loadingText" class="text-white text-xl font-bold text-center flex flex-col items-center max-w-lg">
-            מעבד נתונים...
-        </div>
-        <button id="cancelUploadBtn" onclick="cancelCurrentUpload()" class="mt-6 px-5 py-2 bg-white bg-opacity-15 hover:bg-opacity-25 text-white border border-white border-opacity-40 rounded-lg text-sm font-semibold transition-colors">
-            ביטול פעולה
+<!-- ========= HEADER ========= -->
+<header class="bg-gradient-to-l from-brand-800 via-brand-700 to-blue-700 text-white shadow-lg">
+  <div class="max-w-7xl mx-auto px-4 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center text-2xl shrink-0">💬</div>
+      <div>
+        <h1 class="text-xl sm:text-2xl font-extrabold leading-tight">בוט-קול | דשבורד אנליטיקת למידה למרצים</h1>
+        <p id="statusLine" class="text-brand-100 text-sm mt-1">עובדו 0 משובי סטודנטים | עדכון אחרון: —</p>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2 no-print">
+      <button id="settingsBtn" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/25 font-semibold text-sm transition">
+        ⚙️ <span>הגדרות API</span>
+        <span id="keyDot" class="w-2.5 h-2.5 rounded-full bg-orange-400" title="מפתח לא הוגדר"></span>
+      </button>
+      <button id="exportBtn" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/25 font-semibold text-sm transition">
+        📄 <span>ייצוא לדוח PDF</span>
+      </button>
+      <div class="relative" id="uploadWrap">
+        <button id="uploadBtn" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 font-bold text-sm shadow-md transition">
+          ⬆️ <span>העלאת משובי סטודנטים</span> <span class="text-xs">▾</span>
         </button>
-    </div>
-
-    <!-- חלון הגדרות API Key -->
-    <div id="apiModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden px-4">
-        <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-            <h2 class="text-xl font-bold text-blue-900 mb-2">הגדרות מפתח Gemini API</h2>
-            <p class="text-sm text-gray-600 mb-4">הדביקי כאן את מפתח ה-API שלך מ-Google AI Studio. המפתח נשמר מקומית בדפדפן שלך בלבד.</p>
-            <input type="password" id="apiKeyInput" placeholder="AIzaSy..." class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-left dir-ltr focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4">
-            <div class="flex justify-end gap-3">
-                <button onclick="closeApiModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-semibold">ביטול</button>
-                <button onclick="saveApiKey()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold">שמור מפתח</button>
-            </div>
+        <div id="uploadMenu" class="hidden absolute right-0 sm:right-auto sm:left-0 mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white text-slate-800 rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-40 fade-in">
+          <button data-mode="reset" class="upload-opt w-full text-right px-4 py-3 hover:bg-brand-50 transition">
+            <div class="font-bold text-brand-700">🔄 ניתוח קורס חדש (איפוס)</div>
+            <div class="text-xs text-slate-500 mt-0.5">המאגר הנוכחי יוחלף בתוצאות הניתוח החדש</div>
+          </button>
+          <div class="border-t border-slate-100"></div>
+          <button data-mode="append" class="upload-opt w-full text-right px-4 py-3 hover:bg-emerald-50 transition">
+            <div class="font-bold text-emerald-700">➕ הוסף למאגר הקיים</div>
+            <div class="text-xs text-slate-500 mt-0.5">הנתונים החדשים ישוקללו יחד עם הקיימים</div>
+          </button>
         </div>
+      </div>
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple class="hidden">
+    </div>
+  </div>
+</header>
+
+<!-- ========= INLINE MESSAGES ========= -->
+<div id="toastArea" class="fixed top-4 left-4 z-[60] flex flex-col gap-2 w-[min(92vw,380px)] no-print"></div>
+
+<main class="max-w-7xl mx-auto px-4 py-6">
+  <div id="report">
+
+    <!-- print-only report header -->
+    <div class="print-only mb-4 bg-white rounded-2xl p-5 border border-slate-200">
+      <h2 class="text-2xl font-extrabold text-brand-800">דוח אנליטיקת למידה – בוט-קול</h2>
+      <p id="printMeta" class="text-slate-600 mt-1"></p>
     </div>
 
-    <div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8" id="dashboard-content">
-        <!-- כותרת עליונה -->
-        <div class="bg-white rounded-xl shadow-sm p-6 mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+    <!-- EMPTY STATE -->
+    <section id="emptyState" class="bg-white rounded-3xl border-2 border-dashed border-brand-200 p-8 sm:p-12 text-center card">
+      <div class="text-6xl mb-4">📚</div>
+      <h2 class="text-2xl font-extrabold text-brand-800 mb-2">עדיין לא נותחו משובים</h2>
+      <p class="text-slate-600 max-w-xl mx-auto leading-relaxed">
+        העלו קובצי PDF אנונימיים של תמלולי שיחות הסטודנטיות עם בוט-קול. המערכת תשלח אותם לניתוח ב-Gemini ותציג תובנות פדגוגיות וסטטיסטיקות מחקריות.
+      </p>
+      <div class="mt-6 flex flex-wrap justify-center gap-3 no-print">
+        <button id="emptyUpload" class="px-5 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold shadow transition">⬆️ העלאת קובצי PDF</button>
+        <button id="demoBtn" class="px-5 py-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold transition">👁️ צפייה בנתוני הדגמה</button>
+      </div>
+      <p class="text-xs text-slate-400 mt-6 no-print">טיפ: לפני ההעלאה הראשונה הזינו מפתח Gemini API דרך כפתור "הגדרות API".</p>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section id="dashboard" class="hidden">
+      <!-- tabs -->
+      <nav class="no-print bg-white rounded-2xl p-1.5 shadow-sm border border-slate-200 flex flex-col sm:flex-row gap-1 mb-6">
+        <button class="tab-btn active flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 transition" data-tab="tab1">🎯 מצב הכיתה וסוכנות הלומדת</button>
+        <button class="tab-btn flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 transition" data-tab="tab2">🧩 ניתוח מושגים וחיכוך פדגוגי</button>
+        <button class="tab-btn flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 transition" data-tab="tab3">💡 תובנות להוראה (AI)</button>
+      </nav>
+
+      <!-- TAB 1 -->
+      <div id="tab1" class="tab-panel active">
+        <h2 class="pdf-section-title text-xl font-extrabold text-brand-800 mb-3">1. מצב הכיתה וסוכנות הלומדת</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="card bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+            <h3 class="font-bold text-lg text-slate-800">טיפולוגיית לומדות</h3>
+            <p class="text-sm text-slate-500 mb-3">הלומדת המובנית/משימתית מול הלומדת החוקרת</p>
+            <div class="chart-box"><canvas id="pieChart"></canvas></div>
+          </div>
+          <div class="card bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+            <h3 class="font-bold text-lg text-slate-800">הגעה לרמות חשיבה ספרותית</h3>
+            <p class="text-sm text-slate-500 mb-3">מספר הסטודנטיות שהגיעו לכל רמה</p>
+            <div class="chart-box"><canvas id="funnelChart"></canvas></div>
+          </div>
+          <div class="card bg-white rounded-2xl p-5 shadow-sm border border-slate-200 lg:col-span-2">
+            <h3 class="font-bold text-lg text-slate-800">מדד יזמה ועצמאות לאורך השיחה</h3>
+            <p class="text-sm text-slate-500 mb-3">התפתחות רמת היזמה ומורכבות הפרומפטים (0-100)</p>
+            <div class="chart-box"><canvas id="agencyChart"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2 -->
+      <div id="tab2" class="tab-panel html2pdf__page-break-before">
+        <h2 class="pdf-section-title text-xl font-extrabold text-brand-800 mb-3 mt-2">2. ניתוח מושגים וחיכוך פדגוגי</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="card bg-white rounded-2xl p-5 shadow-sm border border-slate-200 lg:col-span-2">
+            <h3 class="font-bold text-lg text-slate-800">הטמעת מושגי יסוד ספרותיים</h3>
+            <p class="text-sm text-slate-500 mb-3">אחוז הטמעה מוצלחת (ירוק) מול אחוז קושי/חוסר הבנה (אדום)</p>
+            <div class="chart-box" id="conceptBox"><canvas id="conceptChart"></canvas></div>
+          </div>
+          <div id="kpiCard" class="card rounded-2xl p-6 shadow-sm border-2 flex flex-col justify-between">
             <div>
-                <h1 class="text-2xl font-bold text-blue-900">בוט-קול | דשבורד אנליטיקת למידה למרצים</h1>
-                <p class="text-gray-500 mt-1">מאגר משובים | עובדו <span id="reportCount" class="font-bold text-blue-600">0</span> משובי סטודנטים | עדכון אחרון: <span id="lastUpdate">-</span></p>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-2xl">🔁</span>
+                <h3 class="font-extrabold text-lg">מדד חיכוך פדגוגי (Loops)</h3>
+              </div>
+              <p class="text-sm opacity-80">שיעור המקרים בהם זוהה חוסר סבלנות של הסטודנטית או שהבוט נכנס ללולאה וחזר על עצמו</p>
             </div>
-            <div class="flex flex-wrap items-center gap-3 relative header-actions">
-                <button onclick="openApiModal()" class="text-gray-600 hover:text-blue-700 bg-gray-100 hover:bg-blue-50 px-3 py-2 rounded-lg font-semibold flex items-center gap-1.5 text-sm transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
-                    הגדרות API
-                </button>
-                <button onclick="exportPDF()" class="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-2 text-sm px-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    ייצוא לדוח PDF
-                </button>
-                <div class="relative dropdown-container">
-                    <button class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-semibold shadow-sm transition-colors flex items-center gap-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                        העלאת משובי סטודנטים
-                    </button>
-                    <div class="dropdown-menu absolute left-0 w-full z-10">
-                        <div class="bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden">
-                            <button onclick="triggerUpload('new')" class="w-full text-right px-4 py-3 hover:bg-blue-50 text-gray-700 text-sm font-semibold border-b">ניתוח קורס חדש (איפוס)</button>
-                            <button onclick="triggerUpload('append')" class="w-full text-right px-4 py-3 hover:bg-blue-50 text-gray-700 text-sm font-semibold">הוסף למאגר הקיים</button>
-                        </div>
-                    </div>
-                </div>
+            <div class="my-6 text-center">
+              <div id="kpiValue" class="text-7xl font-extrabold tracking-tight">0%</div>
+              <div class="w-full h-3 bg-white/70 rounded-full mt-4 overflow-hidden border border-black/5">
+                <div id="kpiBar" class="h-full rounded-full transition-all duration-700" style="width:0%"></div>
+              </div>
+              <div class="flex justify-between text-xs mt-1 opacity-70"><span>0%</span><span>30%</span><span>100%</span></div>
             </div>
+            <div id="kpiNote" class="text-sm rounded-xl p-3 bg-white/70 leading-relaxed"></div>
+          </div>
         </div>
+      </div>
 
-        <!-- לשוניות ניווט -->
-        <div class="bg-white rounded-xl shadow-sm mb-6 overflow-hidden">
-            <div class="flex border-b border-gray-200">
-                <button onclick="switchTab('tab1')" class="tab-btn flex-1 py-4 text-center font-semibold text-blue-600 border-b-2 border-blue-600 transition-colors">מצב הכיתה וסוכנות הלומדת</button>
-                <button onclick="switchTab('tab2')" class="tab-btn flex-1 py-4 text-center font-semibold text-gray-500 border-b-2 border-transparent hover:text-blue-500 transition-colors">ניתוח מושגים וחיכוך פדגוגי</button>
-                <button onclick="switchTab('tab3')" class="tab-btn flex-1 py-4 text-center font-semibold text-gray-500 border-b-2 border-transparent hover:text-blue-500 transition-colors">תובנות להוראה (AI)</button>
+      <!-- TAB 3 -->
+      <div id="tab3" class="tab-panel html2pdf__page-break-before">
+        <h2 class="pdf-section-title text-xl font-extrabold text-brand-800 mb-3 mt-2">3. תובנות להוראה (AI)</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="card bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+            <h3 class="font-extrabold text-lg text-brand-800 flex items-center gap-2 mb-1">🧠 מנוע החלטות פדגוגיות (מבוסס AI)</h3>
+            <p class="text-sm text-slate-500 mb-4">המלצות פרקטיות להמשך ההוראה במליאה</p>
+            <ol id="insightsList" class="space-y-3"></ol>
+          </div>
+          <div class="card bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+            <h3 class="font-extrabold text-lg text-brand-800 flex items-center gap-2 mb-1">💎 "יהלומים" לדיון במליאה</h3>
+            <p class="text-sm text-slate-500 mb-3">ציטוטים נבחרים מתוך תמלולי הסטודנטיות</p>
+            <div class="flex flex-wrap gap-3 text-xs mb-4">
+              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-blue-500"></span> תובנה/פרשנות עצמאית</span>
+              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-orange-500"></span> רגע של תסכול/חיכוך</span>
             </div>
+            <div id="quotesList" class="space-y-3"></div>
+          </div>
         </div>
+      </div>
 
-        <!-- לשונית 1 -->
-        <div id="tab1" class="tab-content active">
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div class="bg-white p-6 rounded-xl shadow-sm">
-                    <h3 class="font-bold text-lg mb-4 text-gray-700">טיפולוגיית לומדות</h3>
-                    <div class="h-64"><canvas id="pieChart"></canvas></div>
-                </div>
-                <div class="bg-white p-6 rounded-xl shadow-sm">
-                    <h3 class="font-bold text-lg mb-4 text-gray-700">הגעה לרמות חשיבה ספרותית</h3>
-                    <div class="h-64"><canvas id="funnelChart"></canvas></div>
-                </div>
-                <div class="bg-white p-6 rounded-xl shadow-sm md:col-span-2 lg:col-span-1">
-                    <h3 class="font-bold text-lg mb-4 text-gray-700">מדד יזמה ועצמאות (לאורך השיחה)</h3>
-                    <div class="h-64"><canvas id="agencyChart"></canvas></div>
-                </div>
-            </div>
-        </div>
+      <div class="no-print mt-6 text-xs text-slate-400 text-center" id="filesNote"></div>
+    </section>
+  </div>
+</main>
 
-        <!-- לשונית 2 -->
-        <div id="tab2" class="tab-content">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-white p-6 rounded-xl shadow-sm md:col-span-2">
-                    <h3 class="font-bold text-lg mb-4 text-gray-700">הטמעת מושגי יסוד</h3>
-                    <div class="h-80"><canvas id="conceptChart"></canvas></div>
-                </div>
-                <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col justify-center items-center text-center border-t-4 border-orange-400">
-                    <h3 class="font-bold text-lg mb-2 text-gray-700">מדד חיכוך פדגוגי (Loops)</h3>
-                    <p class="text-sm text-gray-500 mb-6">שיעור המקרים בהם זוהה חוסר סבלנות או שהבוט חזר על עצמו</p>
-                    <div class="text-6xl font-black text-orange-500 mb-2" id="frictionScore">0%</div>
-                    <p class="text-sm text-gray-600 mt-4 px-4">מדד גבוה מ-30% מצביע על צורך בהגמשת הפיגומים והמבנה.</p>
-                </div>
-            </div>
-        </div>
+<footer class="no-print text-center text-xs text-slate-400 pb-8">
+  בוט-קול • הניתוח מבוצע ע"י Gemini ומיועד לסיוע פדגוגי בלבד • מפתח ה-API נשמר רק בדפדפן שלכם
+</footer>
 
-        <!-- לשונית 3 -->
-        <div id="tab3" class="tab-content">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="bg-white p-6 rounded-xl shadow-sm">
-                    <h3 class="font-bold text-lg mb-4 text-gray-700 flex items-center gap-2">
-                        <svg class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z"></path></svg>
-                        מנוע החלטות פדגוגיות (מבוסס AI)
-                    </h3>
-                    <div class="space-y-4" id="insightsContainer">
-                        <div class="p-4 bg-gray-50 rounded-lg text-gray-500 text-center">העלי משובים כדי לצפות בתובנות ה-AI...</div>
-                    </div>
-                </div>
-                
-                <div class="bg-white p-6 rounded-xl shadow-sm">
-                    <h3 class="font-bold text-lg mb-4 text-gray-700 flex items-center gap-2">
-                        <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-                        "יהלומים" לדיון במליאה
-                    </h3>
-                    <div class="space-y-4" id="quotesContainer">
-                        <div class="p-4 bg-gray-50 rounded-lg text-gray-500 text-center">העלי משובים כדי לאתר ציטוטים בולטים...</div>
-                    </div>
-                </div>
-            </div>
-        </div>
+<!-- ========= LOADING OVERLAY ========= -->
+<div id="overlay" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+  <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md text-center fade-in">
+    <div id="ovSpinner" class="spinner mx-auto mb-5"></div>
+    <div id="ovIcon" class="hidden text-6xl mb-4"></div>
+    <h3 id="ovTitle" class="text-xl font-extrabold text-brand-800">מעבד...</h3>
+    <p id="ovText" class="text-slate-600 mt-2 leading-relaxed min-h-[1.5rem]"></p>
+    <div id="ovProgressWrap" class="mt-5 hidden">
+      <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+        <div id="ovProgress" class="h-full bg-gradient-to-l from-emerald-500 to-brand-600 transition-all duration-500" style="width:0%"></div>
+      </div>
+      <p id="ovProgressText" class="text-xs text-slate-500 mt-2"></p>
     </div>
+    <button id="ovClose" class="hidden mt-6 px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold transition">סגירה</button>
+  </div>
+</div>
 
-    <script>
-        let mockData = { totalReports: 0, lastUpdate: '-', pieChartData: [0, 0], funnelData: [0, 0, 0], agencyData: [0, 0, 0, 0, 0], conceptData: [], frictionLoops: 0, quotes: [], insights: [] };
-        let currentAbortController = null;
+<!-- ========= SETTINGS MODAL ========= -->
+<div id="settingsModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+  <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg fade-in overflow-hidden">
+    <div class="bg-gradient-to-l from-brand-700 to-blue-700 text-white px-6 py-4 flex items-center justify-between">
+      <h3 class="text-lg font-extrabold">⚙️ הגדרות API</h3>
+      <button id="settingsClose" class="text-2xl leading-none hover:opacity-70" aria-label="סגירה">×</button>
+    </div>
+    <div class="p-6 space-y-5">
+      <div>
+        <label for="apiKeyInput" class="block font-bold mb-1.5">מפתח Gemini API</label>
+        <div class="flex gap-2">
+          <input id="apiKeyInput" type="password" dir="ltr" autocomplete="off" spellcheck="false"
+                 class="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono text-sm"
+                 placeholder="AIza...">
+          <button id="toggleKey" class="px-3 rounded-xl border border-slate-300 hover:bg-slate-50" title="הצג/הסתר">👁️</button>
+        </div>
+        <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">
+          המפתח נשמר ב-localStorage של הדפדפן הזה בלבד ונשלח ישירות ל-Google. ניתן להפיק מפתח חינמי ב-
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="text-brand-600 underline">Google AI Studio</a>.
+        </p>
+      </div>
+      <div>
+        <label for="modelSelect" class="block font-bold mb-1.5">מודל</label>
+        <select id="modelSelect" dir="ltr" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm">
+          <option value="gemini-2.5-flash">gemini-2.5-flash (מומלץ)</option>
+          <option value="gemini-2.5-pro">gemini-2.5-pro (מעמיק, איטי יותר)</option>
+          <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+          <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+          <option value="custom">אחר (הזנה ידנית)…</option>
+        </select>
+        <input id="customModel" type="text" dir="ltr" placeholder="model-name"
+               class="hidden mt-2 w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono text-sm">
+      </div>
+      <div id="settingsMsg" class="hidden text-sm rounded-xl p-3"></div>
+      <div class="flex flex-wrap gap-2 pt-1">
+        <button id="saveKey" class="flex-1 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold transition">💾 שמירה</button>
+        <button id="testKey" class="px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold transition">בדיקת חיבור</button>
+        <button id="clearKey" class="px-4 py-2.5 rounded-xl bg-white hover:bg-red-50 text-red-600 border border-red-200 font-bold transition">מחיקת מפתח</button>
+      </div>
+      <div class="border-t border-slate-100 pt-4">
+        <button id="wipeData" class="text-sm text-slate-500 hover:text-red-600 underline">מחיקת כל נתוני הדשבורד מהדפדפן</button>
+      </div>
+    </div>
+  </div>
+</div>
 
-        function openApiModal() {
-            document.getElementById('apiKeyInput').value = localStorage.getItem('gemini_api_key') || '';
-            document.getElementById('apiModal').classList.remove('hidden');
-        }
+<script>
+(() => {
+  'use strict';
 
-        function closeApiModal() {
-            document.getElementById('apiModal').classList.add('hidden');
-        }
+  /* ================= CONSTANTS ================= */
+  const LS_KEY = 'botkol_gemini_key';
+  const LS_MODEL = 'botkol_gemini_model';
+  const LS_STATE = 'botkol_dashboard_state_v1';
+  const MAX_FILE_BYTES = 19 * 1024 * 1024;     // inline-data limit per request ~20MB
+  const MAX_BATCH_BYTES = 14 * 1024 * 1024;
+  const MAX_BATCH_FILES = 5;
 
-        function saveApiKey() {
-            const key = document.getElementById('apiKeyInput').value.trim();
-            if (key) {
-                localStorage.setItem('gemini_api_key', key);
-                closeApiModal();
-            }
-        }
+  const ANALYSIS_PROMPT = `תפקיד: אתה מנתח נתונים פדגוגי. קיבלת תמלולי שיחות של סטודנטיות מול בוט לניתוח טקסטים ספרותיים. עליך לנתח את השיחות על בסיס 4 מדדים: סוכנות לומד, עומק חשיבה ספרותית, חיכוך פדגוגי, וטיפולוגיית לומדות.
+החזר את התשובה *אך ורק* כאובייקט JSON חוקי המכיל את המפתחות הבאים:
+- pieChartData: מערך של 2 מספרים [כמות לומדות מובניות, כמות לומדות חוקרות].
+- funnelData: מערך של 3 מספרים [כמה הגיעו לרמת תצפית, כמה לפרשנות, כמה להעמקה].
+- agencyData: מערך של 5 מספרים (0-100) המייצגים את התפתחות רמת היזמה ומורכבות הפרומפטים לאורך השיחות.
+- conceptData: מערך של אובייקטים למושגים שעלו בשיחה. כל אובייקט יכיל: concept (שם המושג), success (אחוז הבנה 0-100), fail (אחוז קושי 0-100).
+- frictionLoops: מספר (0-100) המייצג את אחוז החיכוך הפדגוגי והלולאות.
+- quotes: מערך של 3 אובייקטים של ציטוטים נבחרים מהתמלולים, כל אחד עם text ו-type ("insight" או "friction").
+- insights: מערך של 3 מחרוזות טקסט עם תובנות פדגוגיות ממוקדות למרצה.`;
 
-        function cancelCurrentUpload() {
-            if (currentAbortController) {
-                currentAbortController.abort();
-                currentAbortController = null;
-            }
-            document.getElementById('loadingOverlay').style.display = 'none';
-        }
+  /* ================= HELPERS ================= */
+  const $ = (id) => document.getElementById(id);
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const clamp = (n, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, Number.isFinite(+n) ? +n : 0));
+  const round1 = (n) => Math.round(n * 10) / 10;
 
-        // חילוץ טקסט מהיר מקובץ PDF מקומית בדפדפן
-        async function extractTextFromPDF(file) {
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
+    del(k) { try { localStorage.removeItem(k); } catch {} }
+  };
+
+  /* ================= TOASTS (no alert()) ================= */
+  function toast(msg, type = 'info', ms = 4500) {
+    const styles = {
+      success: 'bg-emerald-50 border-emerald-300 text-emerald-800',
+      error:   'bg-red-50 border-red-300 text-red-800',
+      warn:    'bg-orange-50 border-orange-300 text-orange-800',
+      info:    'bg-brand-50 border-brand-200 text-brand-800'
+    };
+    const icons = { success: '✅', error: '⛔', warn: '⚠️', info: 'ℹ️' };
+    const el = document.createElement('div');
+    el.className = `fade-in border rounded-xl shadow-lg px-4 py-3 text-sm flex gap-2 items-start ${styles[type] || styles.info}`;
+    const ic = document.createElement('span'); ic.textContent = icons[type] || icons.info;
+    const tx = document.createElement('span'); tx.className = 'flex-1 leading-relaxed'; tx.textContent = msg;
+    const x = document.createElement('button'); x.textContent = '×'; x.className = 'text-lg leading-none opacity-60 hover:opacity-100';
+    x.onclick = () => el.remove();
+    el.append(ic, tx, x);
+    $('toastArea').appendChild(el);
+    if (ms) setTimeout(() => el.remove(), ms);
+  }
+
+  /* ================= OVERLAY ================= */
+  const overlay = {
+    show(title, text = '') {
+      $('ovSpinner').classList.remove('hidden');
+      $('ovIcon').classList.add('hidden');
+      $('ovClose').classList.add('hidden');
+      $('ovProgressWrap').classList.add('hidden');
+      $('ovTitle').textContent = title;
+      $('ovText').textContent = text;
+      $('overlay').classList.remove('hidden');
+    },
+    text(t) { $('ovText').textContent = t; },
+    progress(done, total, label) {
+      $('ovProgressWrap').classList.remove('hidden');
+      $('ovProgress').style.width = (total ? Math.round(done / total * 100) : 0) + '%';
+      $('ovProgressText').textContent = label || `${done} / ${total}`;
+    },
+    result(kind, title, text) {
+      $('ovSpinner').classList.add('hidden');
+      $('ovIcon').classList.remove('hidden');
+      $('ovIcon').textContent = kind === 'success' ? '✅' : kind === 'warn' ? '⚠️' : '⛔';
+      $('ovTitle').textContent = title;
+      $('ovText').textContent = text;
+      $('ovClose').classList.remove('hidden');
+    },
+    hide() { $('overlay').classList.add('hidden'); }
+  };
+  $('ovClose').onclick = () => overlay.hide();
+
+  /* ================= STATE ================= */
+  let state = loadState();
+
+  function loadState() {
+    try {
+      const raw = store.get(LS_STATE);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      return s && s.data ? s : null;
+    } catch { return null; }
+  }
+  function saveState() {
+    if (state) store.set(LS_STATE, JSON.stringify(state)); else store.del(LS_STATE);
+  }
+
+  /* ================= AI RESPONSE CLEANING & NORMALIZATION ================= */
+  function cleanJsonText(text) {
+    let t = String(text || '').trim();
+    t = t.replace(/^﻿/, '');
+    t = t.replace(/^```(?:json|JSON)?\s*/m, '').replace(/```\s*$/m, '').trim();
+    t = t.replace(/```json/gi, '').replace(/```/g, '').trim();
+    const first = t.indexOf('{'), last = t.lastIndexOf('}');
+    if (first !== -1 && last > first) t = t.slice(first, last + 1);
+    return t;
+  }
+
+  function parseAiJson(text) {
+    const cleaned = cleanJsonText(text);
+    try { return JSON.parse(cleaned); }
+    catch {
+      // second chance: remove trailing commas
+      return JSON.parse(cleaned.replace(/,\s*([}\]])/g, '$1'));
+    }
+  }
+
+  function normalize(d) {
+    if (!d || typeof d !== 'object') throw new Error('מבנה התשובה מה-AI אינו תקין.');
+    const nums = (arr, len, max = Infinity) => {
+      const a = Array.isArray(arr) ? arr.map(v => Math.max(0, Math.min(max, +v || 0))) : [];
+      while (a.length < len) a.push(a.length ? a[a.length - 1] * (max === 100 ? 1 : 0) : 0);
+      return a.slice(0, len);
+    };
+    const concepts = (Array.isArray(d.conceptData) ? d.conceptData : [])
+      .filter(c => c && (c.concept || c.name))
+      .map(c => {
+        let s = clamp(c.success), f = clamp(c.fail);
+        if (s + f > 100) { const k = 100 / (s + f); s *= k; f *= k; }
+        return { concept: String(c.concept || c.name).trim(), success: round1(s), fail: round1(f) };
+      });
+    const quotes = (Array.isArray(d.quotes) ? d.quotes : [])
+      .filter(q => q && (q.text || typeof q === 'string'))
+      .map(q => typeof q === 'string'
+        ? { text: q.trim(), type: 'insight' }
+        : { text: String(q.text).trim(), type: q.type === 'friction' ? 'friction' : 'insight' });
+    const insights = (Array.isArray(d.insights) ? d.insights : [])
+      .map(i => typeof i === 'string' ? i : (i && (i.text || i.insight)) || '')
+      .map(s => String(s).trim()).filter(Boolean);
+    return {
+      pieChartData: nums(d.pieChartData, 2),
+      funnelData: nums(d.funnelData, 3),
+      agencyData: nums(d.agencyData, 5, 100),
+      conceptData: concepts,
+      frictionLoops: round1(clamp(d.frictionLoops)),
+      quotes,
+      insights
+    };
+  }
+
+  /* ================= MERGE (add to existing pool) ================= */
+  function mergeData(a, aN, b, bN) {
+    if (!a || !aN) return b;
+    const tot = aN + bN;
+    const wavg = (x, y) => round1((x * aN + y * bN) / tot);
+
+    const cmap = new Map();
+    const key = s => s.replace(/["'״׳]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    a.conceptData.forEach(c => cmap.set(key(c.concept), { ...c, wa: aN, wb: 0, sb: 0, fb: 0 }));
+    b.conceptData.forEach(c => {
+      const k = key(c.concept);
+      if (cmap.has(k)) Object.assign(cmap.get(k), { wb: bN, sb: c.success, fb: c.fail });
+      else cmap.set(k, { concept: c.concept, success: 0, fail: 0, wa: 0, wb: bN, sb: c.success, fb: c.fail });
+    });
+    const concepts = [...cmap.values()].map(c => {
+      const w = c.wa + c.wb;
+      return { concept: c.concept, success: round1((c.success * c.wa + c.sb * c.wb) / w), fail: round1((c.fail * c.wa + c.fb * c.wb) / w) };
+    });
+
+    const seen = new Set();
+    const quotes = [...b.quotes, ...a.quotes].filter(q => {
+      const k = q.text.slice(0, 60);
+      if (seen.has(k)) return false; seen.add(k); return true;
+    });
+
+    return {
+      pieChartData: a.pieChartData.map((v, i) => v + b.pieChartData[i]),
+      funnelData: a.funnelData.map((v, i) => v + b.funnelData[i]),
+      agencyData: a.agencyData.map((v, i) => wavg(v, b.agencyData[i])),
+      conceptData: concepts,
+      frictionLoops: wavg(a.frictionLoops, b.frictionLoops),
+      quotes: balanceQuotes(quotes, 6),
+      insights: b.insights.length ? b.insights : a.insights   // newest call already received previous insights as context
+    };
+  }
+
+  function balanceQuotes(list, max) {
+    const ins = list.filter(q => q.type === 'insight'), fr = list.filter(q => q.type === 'friction');
+    const out = [];
+    while (out.length < max && (ins.length || fr.length)) {
+      if (ins.length) out.push(ins.shift());
+      if (out.length < max && fr.length) out.push(fr.shift());
+    }
+    return out;
+  }
+
+  /* ================= FILES ================= */
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(',')[1] || '');
+      r.onerror = () => reject(new Error(`שגיאה בקריאת הקובץ ${file.name}`));
+      r.readAsDataURL(file);
+    });
+  }
+
+  function makeBatches(files) {
+    const batches = []; let cur = [], bytes = 0;
+    for (const f of files) {
+      if (cur.length && (cur.length >= MAX_BATCH_FILES || bytes + f.size > MAX_BATCH_BYTES)) {
+        batches.push(cur); cur = []; bytes = 0;
+      }
+      cur.push(f); bytes += f.size;
+    }
+    if (cur.length) batches.push(cur);
+    return batches;
+  }
+
+  /* ================= GEMINI ================= */
+  function getModel() { return store.get(LS_MODEL) || 'gemini-2.5-flash'; }
+  function getKey() { return (store.get(LS_KEY) || '').trim(); }
+
+  async function callGemini(parts, { json = true, key = getKey(), model = getModel() } = {}) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const body = {
+      contents: [{ role: 'user', parts }],
+      generationConfig: json ? { response_mime_type: 'application/json', temperature: 0.3 } : { temperature: 0 }
+    };
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify(body)
+      });
+    } catch (e) {
+      throw new Error('לא ניתן להתחבר לשרתי Gemini. בדקו את חיבור האינטרנט.');
+    }
+    let payload = null;
+    try { payload = await res.json(); } catch {}
+    if (!res.ok) {
+      const m = payload?.error?.message || res.statusText;
+      if (res.status === 400 && /API key/i.test(m)) throw new Error('מפתח ה-API אינו תקין. עדכנו אותו ב"הגדרות API".');
+      if (res.status === 403) throw new Error('הגישה נדחתה (403). ודאו שהמפתח פעיל ושה-Gemini API מאופשר עבורו.');
+      if (res.status === 404) throw new Error(`המודל "${model}" לא נמצא. בחרו מודל אחר ב"הגדרות API".`);
+      if (res.status === 429) throw new Error('חרגתם ממכסת הבקשות של Gemini (429). המתינו מעט ונסו שוב.');
+      throw new Error(`שגיאת Gemini (${res.status}): ${m}`);
+    }
+    const cand = payload?.candidates?.[0];
+    const text = (cand?.content?.parts || []).map(p => p.text || '').join('');
+    if (!text) {
+      const reason = cand?.finishReason || payload?.promptFeedback?.blockReason || 'תשובה ריקה';
+      throw new Error(`ה-AI לא החזיר תוכן (${reason}).`);
+    }
+    return text;
+  }
+
+  function buildPrompt(batchSize, prevInsights) {
+    let extra = `\n\nהנחיות נוספות:
+- מצורפים ${batchSize} קובצי PDF, כל קובץ הוא תמלול אנונימי של סטודנטית אחת. סכום pieChartData צריך להיות ${batchSize}, וכל ערך ב-funnelData הוא בין 0 ל-${batchSize} (מספר הסטודנטיות שהגיעו לאותה רמה).
+- הקפד שהציטוטים יהיו מילה במילה מתוך דברי הסטודנטיות (לא הבוט), בעברית, קצרים (עד 40 מילים).
+- כלול לפחות ציטוט אחד מסוג "insight" ולפחות אחד מסוג "friction" אם קיים.
+- conceptData: 3 עד 8 מושגים ספרותיים מרכזיים (למשל: מספר, נקודת מבט, מוטיב, אירוניה, דמות, סמל), success+fail לא יעלו על 100.
+- כל הטקסטים בעברית. אל תוסיף מפתחות נוספים ואל תעטוף בבלוק קוד.`;
+    if (prevInsights && prevInsights.length) {
+      extra += `\n- ההמלצות הבאות נוצרו בניתוח קודם של אותו קורס. נסח 3 המלצות מעודכנות המשלבות את הממצאים הקודמים עם החדשים:\n${prevInsights.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+    }
+    return ANALYSIS_PROMPT + extra;
+  }
+
+  /* ================= UPLOAD FLOW ================= */
+  let uploadMode = 'reset';
+  let busy = false;
+
+  async function handleFiles(fileList) {
+    if (busy) return;
+    const all = [...fileList];
+    if (!all.length) return;
+
+    if (!getKey()) {
+      toast('יש להזין מפתח Gemini API לפני ההעלאה.', 'warn');
+      openSettings('נא להזין מפתח API כדי להתחיל בניתוח.');
+      return;
+    }
+
+    const pdfs = all.filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+    const notPdf = all.length - pdfs.length;
+    const tooBig = pdfs.filter(f => f.size > MAX_FILE_BYTES);
+    const valid = pdfs.filter(f => f.size <= MAX_FILE_BYTES && f.size > 0);
+    if (notPdf) toast(`${notPdf} קבצים שאינם PDF דולגו.`, 'warn');
+    if (tooBig.length) toast(`קבצים גדולים מ-19MB דולגו: ${tooBig.map(f => f.name).join(', ')}`, 'warn', 8000);
+    if (!valid.length) { toast('לא נמצאו קובצי PDF תקינים לניתוח.', 'error'); return; }
+
+    busy = true;
+    const mode = uploadMode;
+    const batches = makeBatches(valid);
+    overlay.show(mode === 'reset' ? 'ניתוח קורס חדש' : 'הוספה למאגר הקיים', `קורא ${valid.length} קבצים...`);
+
+    // work on a draft; the existing pool is only replaced after success
+    let acc = mode === 'append' && state ? structuredClone(state.data) : null;
+    let accN = mode === 'append' && state ? state.count : 0;
+    const fileNames = mode === 'append' && state ? [...(state.files || [])] : [];
+    const failed = [];
+    let processed = 0;
+
+    try {
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        overlay.progress(i, batches.length, `מנה ${i + 1} מתוך ${batches.length} • ${processed} / ${valid.length} קבצים`);
+        overlay.text(`ממיר ${batch.length} קבצים ל-Base64...`);
+        try {
+          const parts = [{ text: buildPrompt(batch.length, acc?.insights) }];
+          for (const f of batch) {
+            parts.push({ text: `--- תמלול: ${f.name} ---` });
+            parts.push({ inline_data: { mime_type: 'application/pdf', data: await fileToBase64(f) } });
+          }
+          overlay.text(`שולח ל-Gemini לניתוח פדגוגי (${getModel()})... זה עשוי להימשך עד דקה.`);
+          let parsed, lastErr;
+          for (let attempt = 0; attempt < 2; attempt++) {
             try {
-                if (typeof pdfjsLib === 'undefined') return null;
-                const arrayBuffer = await file.arrayBuffer();
-                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-                const pdf = await loadingTask.promise;
-                let fullText = '';
-                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                    const page = await pdf.getPage(pageNum);
-                    const textContent = await page.getTextContent();
-                    const pageText = textContent.items.map(item => item.str).join(' ');
-                    fullText += pageText + '\n';
-                }
-                const cleaned = fullText.replace(/\s+/g, ' ').trim();
-                // אם יש פחות מ-50 תווים, כנראה שזה קובץ סרוק כתמונה -> נחזיר null כדי להשתמש בגיבוי
-                return cleaned.length >= 50 ? cleaned : null;
-            } catch (err) {
-                console.warn('חילוץ טקסט נכשל עבור', file.name, '- עובר לשליחה כקובץ PDF מלא:', err);
-                return null;
-            }
-        }
-
-        function triggerUpload(type) {
-            const apiKey = localStorage.getItem('gemini_api_key');
-            if (!apiKey) {
-                openApiModal();
-                return;
-            }
-
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.multiple = true;
-            input.accept = '.pdf';
-            
-            input.onchange = async (e) => {
-                const files = Array.from(e.target.files);
-                if(files.length > 0) {
-                    const loadingOverlay = document.getElementById('loadingOverlay');
-                    const loadingText = document.getElementById('loadingText');
-                    const spinner = document.getElementById('loadingSpinner');
-                    const cancelBtn = document.getElementById('cancelUploadBtn');
-                    
-                    currentAbortController = new AbortController();
-                    loadingOverlay.style.display = 'flex';
-                    spinner.style.display = 'block';
-                    cancelBtn.style.display = 'inline-block';
-                    
-                    try {
-                        // שלב 1: חילוץ טקסט מהיר בדפדפן
-                        const parts = [
-                            {
-                                text: `תפקיד: אתה מנתח נתונים פדגוגי. קיבלת תמלולי שיחות של סטודנטיות מול בוט לניתוח טקסטים ספרותיים.
-עליך לנתח את השיחות על בסיס 4 מדדים: סוכנות לומד, עומק חשיבה ספרותית, חיכוך פדגוגי, וטיפולוגיית לומדות.
-החזר את התשובה *אך ורק* כאובייקט JSON חוקי המכיל את המפתחות הבאים, ללא שום טקסט מקדים או עוקב:
-1. pieChartData: מערך של 2 מספרים [כמות הלומדות המובניות, כמות הלומדות החוקרות].
-2. funnelData: מערך של 3 מספרים [כמה הגיעו לרמת תצפית, כמה לרמת פרשנות, כמה לרמת העמקה].
-3. agencyData: מערך של 5 מספרים (0-100) המייצג את התפתחות רמת היזמה לאורך השיחות.
-4. conceptData: מערך של אובייקטים למושגים שעלו בשיחה. כל אובייקט יכיל concept (שם המושג), success (אחוז הבנה 0-100), ו-fail (אחוז קושי 0-100).
-5. frictionLoops: מספר (0-100) המייצג את אחוז החיכוך.
-6. quotes: מערך של 3 ציטוטים נבחרים (אובייקטים עם text ו-type מסוג "insight" לפרשנות או "friction" לתסכול).
-7. insights: מערך של 3 תובנות פדגוגיות מילוליות למרצה.`
-                            }
-                        ];
-
-                        let extractedCount = 0;
-                        let fallbackPdfCount = 0;
-
-                        for (let i = 0; i < files.length; i++) {
-                            const file = files[i];
-                            loadingText.innerHTML = `<span class="text-2xl font-bold mb-2">שלב 1 מתוך 2: קורא משובים (${i + 1}/${files.length})</span><span class="text-base font-normal text-blue-200">מחלץ טקסט מהיר מהקובץ ${file.name}...</span>`;
-                            
-                            const text = await extractTextFromPDF(file);
-                            if (text) {
-                                extractedCount++;
-                                parts.push({
-                                    text: `\n--- תמלול משוב #${i + 1} (${file.name}) ---\n${text}`
-                                });
-                            } else {
-                                // גיבוי אוטומטי לקבצים סרוקים
-                                fallbackPdfCount++;
-                                const base64Obj = await getBase64(file);
-                                parts.push({
-                                    inline_data: {
-                                        mime_type: "application/pdf",
-                                        data: base64Obj.base64
-                                    }
-                                });
-                            }
-                        }
-
-                        // שלב 2: שליחה מהירה ל-Gemini
-                        const modeNote = fallbackPdfCount === 0
-                            ? `מצב מהיר פעיל (${extractedCount} קבצים חולצו לטקסט נקי)`
-                            : `מנתח ${extractedCount} קובצי טקסט ו-${fallbackPdfCount} קבצים סרוקים`;
-
-                        loadingText.innerHTML = `<span class="text-2xl font-bold mb-2">שלב 2 מתוך 2: מנתח תובנות ב-Gemini AI...</span><span class="text-base font-normal text-blue-200">${modeNote}</span>`;
-
-                        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
-                        const response = await fetch(url, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            signal: currentAbortController.signal,
-                            body: JSON.stringify({
-                                contents: [{ parts }],
-                                generationConfig: { response_mime_type: "application/json" }
-                            })
-                        });
-                        
-                        const jsonResponse = await response.json();
-                        if (jsonResponse.error) {
-                            throw new Error(jsonResponse.error.message || 'שגיאה בתקשורת מול Gemini');
-                        }
-                        
-                        let rawText = jsonResponse.candidates[0].content.parts[0].text;
-                        rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-                        const aiData = JSON.parse(rawText);
-                        
-                        Object.assign(mockData, aiData);
-                        mockData.totalReports = type === 'new' ? files.length : mockData.totalReports + files.length;
-                        
-                        const now = new Date();
-                        mockData.lastUpdate = now.toLocaleDateString('he-IL') + " " + now.toLocaleTimeString('he-IL', {hour: '2-digit', minute:'2-digit'});
-                        
-                        document.getElementById('reportCount').innerText = mockData.totalReports;
-                        document.getElementById('lastUpdate').innerText = mockData.lastUpdate;
-                        
-                        if (pieChart) pieChart.destroy();
-                        if (funnelChart) funnelChart.destroy();
-                        if (agencyChart) agencyChart.destroy();
-                        if (conceptChart) conceptChart.destroy();
-                        
-                        initCharts();
-                        populateTextData();
-                        if (window.saveDashboardToFirebase) {
-                            window.saveDashboardToFirebase(mockData);
-                        }
-                        
-                        spinner.style.display = 'none';
-                        cancelBtn.style.display = 'none';
-                        loadingText.innerHTML = `<span class="text-3xl font-black text-green-400 mb-2">הושלם בהצלחה!</span><span class="text-lg text-white">עובדו ${files.length} משובים.</span>`;
-                        setTimeout(() => { loadingOverlay.style.display = 'none'; }, 1500);
-
-                    } catch (error) {
-                        if (error.name === 'AbortError') {
-                            console.log('הפעולה בוטלה על ידי המשתמשת.');
-                            return;
-                        }
-                        console.error('שגיאה:', error);
-                        spinner.style.display = 'none';
-                        cancelBtn.style.display = 'none';
-                        loadingText.innerHTML = `<span class="text-3xl font-black text-red-400 mb-2">אופס, משהו השתבש</span><span class="text-base font-normal text-white mt-2">${error.message}</span>`;
-                        setTimeout(() => { loadingOverlay.style.display = 'none'; }, 4500);
-                    } finally {
-                        currentAbortController = null;
-                    }
-                }
-            };
-            input.click();
-        }
-
-        function getBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => {
-                    let encoded = reader.result.toString().replace(/^data:(.*,)?/, '');
-                    if ((encoded.length % 4) > 0) encoded += '='.repeat(4 - (encoded.length % 4));
-                    resolve({ name: file.name, base64: encoded });
-                };
-                reader.onerror = error => reject(error);
-            });
-        }
-
-        let pieChart, funnelChart, agencyChart, conceptChart;
-
-        function initCharts() {
-            if(mockData.totalReports === 0) return;
-            const ctxPie = document.getElementById('pieChart').getContext('2d');
-            pieChart = new Chart(ctxPie, { type: 'doughnut', data: { labels: ['הלומדת המובנית', 'הלומדת החוקרת'], datasets: [{ data: mockData.pieChartData || [0, 0], backgroundColor: ['#3b82f6', '#10b981'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Assistant' } } } } } });
-
-            const ctxFunnel = document.getElementById('funnelChart').getContext('2d');
-            const funnelValues = mockData.funnelData || [0, 0, 0];
-            funnelChart = new Chart(ctxFunnel, { type: 'bar', data: { labels: ['רמה 1: תצפית', 'רמה 2: פרשנות', 'רמה 3: העמקה'], datasets: [{ label: 'כמות לומדות', data: funnelValues, backgroundColor: '#6366f1', borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: Math.max(...funnelValues, 5) } }, plugins: { legend: { display: false } } } });
-
-            const ctxAgency = document.getElementById('agencyChart').getContext('2d');
-            agencyChart = new Chart(ctxAgency, { type: 'line', data: { labels: ['תחילת שיחה', 'רבע 1', 'אמצע', 'רבע 3', 'סיום'], datasets: [{ label: 'מורכבות פרומפט ויזמה', data: mockData.agencyData || [0, 0, 0, 0, 0], borderColor: '#10b981', tension: 0.4, fill: true, backgroundColor: 'rgba(16, 185, 129, 0.1)' }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } } });
-
-            const ctxConcept = document.getElementById('conceptChart').getContext('2d');
-            const concepts = mockData.conceptData || [];
-            conceptChart = new Chart(ctxConcept, { type: 'bar', data: { labels: concepts.map(d => d.concept), datasets: [{ label: 'הטמעה מוצלחת', data: concepts.map(d => d.success), backgroundColor: '#10b981' }, { label: 'קושי', data: concepts.map(d => d.fail), backgroundColor: '#ef4444' }] }, options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { stacked: true, max: 100 }, y: { stacked: true } } } });
-        }
-
-        function populateTextData() {
-            if(mockData.totalReports === 0) return;
-            document.getElementById('frictionScore').innerText = (mockData.frictionLoops || 0) + "%";
-            
-            const quotesContainer = document.getElementById('quotesContainer');
-            quotesContainer.innerHTML = '';
-            (mockData.quotes || []).forEach(q => {
-                const div = document.createElement('div');
-                div.className = `p-4 rounded-md text-sm border-r-4 ${q.type === 'insight' ? 'bg-blue-50 border-blue-500' : 'bg-orange-50 border-orange-500'}`;
-                div.innerHTML = `"${q.text}"`;
-                quotesContainer.appendChild(div);
-            });
-
-            const insightsContainer = document.getElementById('insightsContainer');
-            insightsContainer.innerHTML = '';
-            (mockData.insights || []).forEach(insight => {
-                const div = document.createElement('div');
-                div.className = 'p-3 bg-gray-50 rounded-md text-sm border border-gray-100 flex items-start gap-2';
-                div.innerHTML = `<span class="text-blue-500 font-bold">•</span><span>${insight}</span>`;
-                insightsContainer.appendChild(div);
-            });
-        }
-
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => { el.classList.remove('border-blue-600', 'text-blue-600'); el.classList.add('border-transparent', 'text-gray-500'); });
-            document.getElementById(tabId).classList.add('active');
-            const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.getAttribute('onclick').includes(tabId));
-            if(activeBtn) { activeBtn.classList.remove('border-transparent', 'text-gray-500'); activeBtn.classList.add('border-blue-600', 'text-blue-600'); }
-        }
-
-        async function exportPDF() {
-            const element = document.getElementById('dashboard-content');
-            const headerActions = document.querySelector('.header-actions');
-            try {
-                headerActions.style.display = 'none';
-                const opt = { margin: 10, filename: 'דוח_מרצים.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' } };
-                await html2pdf().set(opt).from(element).save();
-            } catch (error) { console.error(error); } finally { setTimeout(() => { headerActions.style.display = 'flex'; }, 3000); }
-        }
-    </script>
-
-    <!-- חיבור Firebase Firestore -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyDZlP_rjZHdFrLHhg0SJYS1j8mA5QakHEo",
-            authDomain: "bot-kol-c4b19.firebaseapp.com",
-            projectId: "bot-kol-c4b19",
-            storageBucket: "bot-kol-c4b19.firebasestorage.app",
-            messagingSenderId: "232146391845",
-            appId: "1:232146391845:web:f86eec2138634c1fc2c0cc",
-            measurementId: "G-K5SQDH2SZS"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        window.saveDashboardToFirebase = async function(dataToSave) {
-            try {
-                await setDoc(doc(db, "botkol_dashboard", "latest_state"), dataToSave);
-                console.log("נתוני הדשבורד נשמרו בענן בהצלחה!");
+              const raw = await callGemini(parts);
+              overlay.text('מנקה ומפענח את תשובת ה-AI...');
+              parsed = normalize(parseAiJson(raw));
+              break;
             } catch (e) {
-                console.error("שגיאה בשמירה ל-Firebase:", e);
+              lastErr = e;
+              if (/מפתח|403|404|429|להתחבר/.test(e.message)) throw e; // fatal – don't retry
+              overlay.text('התשובה לא הייתה תקינה, מנסה שוב...');
+              await sleep(1200);
             }
-        };
+          }
+          if (!parsed) throw lastErr;
+          acc = mergeData(acc, accN, parsed, batch.length);
+          accN += batch.length;
+          processed += batch.length;
+          fileNames.push(...batch.map(f => f.name));
+        } catch (e) {
+          if (/מפתח|403|404|429|להתחבר/.test(e.message)) throw e;
+          failed.push({ names: batch.map(f => f.name), msg: e.message });
+        }
+      }
+      overlay.progress(batches.length, batches.length, `${processed} / ${valid.length} קבצים`);
 
-        window.addEventListener('DOMContentLoaded', async () => {
-            try {
-                const docSnap = await getDoc(doc(db, "botkol_dashboard", "latest_state"));
-                if (docSnap.exists() && typeof mockData !== 'undefined') {
-                    Object.assign(mockData, docSnap.data());
-                    document.getElementById('reportCount').innerText = mockData.totalReports;
-                    document.getElementById('lastUpdate').innerText = mockData.lastUpdate;
-                    if (typeof initCharts === 'function') initCharts();
-                    if (typeof populateTextData === 'function') populateTextData();
-                }
-            } catch (e) {
-                console.warn("טרם נשמרו נתונים בענן:", e);
-            }
-        });
-    </script>
+      if (!processed) throw new Error(failed[0]?.msg || 'הניתוח נכשל.');
+
+      acc.quotes = balanceQuotes(acc.quotes, 6);
+      state = { data: acc, count: accN, updatedAt: new Date().toISOString(), files: fileNames };
+      saveState();
+      renderAll();
+
+      if (failed.length) {
+        overlay.result('warn', 'הניתוח הושלם חלקית',
+          `נותחו ${processed} קבצים. ${failed.reduce((n, f) => n + f.names.length, 0)} קבצים נכשלו: ${failed.map(f => f.names.join(', ')).join('; ')}. (${failed[0].msg})`);
+      } else {
+        overlay.result('success', 'הניתוח הושלם בהצלחה!',
+          mode === 'reset'
+            ? `נותחו ${processed} משובי סטודנטים. הדשבורד עודכן.`
+            : `נוספו ${processed} משובים. סה"כ במאגר: ${accN}.`);
+        setTimeout(() => { if (!$('overlay').classList.contains('hidden') && $('ovIcon').textContent === '✅') overlay.hide(); }, 2500);
+      }
+    } catch (e) {
+      overlay.result('error', 'הניתוח נכשל', e.message + (mode === 'reset' && state ? ' המאגר הקודם נשמר ללא שינוי.' : ''));
+    } finally {
+      busy = false;
+    }
+  }
+
+  /* ================= CHARTS ================= */
+  const charts = {};
+  const C = {
+    blue: '#3b82f6', indigo: '#4f46e5', green: '#10b981', orange: '#f97316', red: '#ef4444',
+    grid: '#e2e8f0', text: '#475569'
+  };
+  Chart.defaults.font.family = "'Assistant', sans-serif";
+  Chart.defaults.font.size = 13;
+  Chart.defaults.color = C.text;
+  const rtlPlugins = (legend = true) => ({
+    legend: { display: legend, position: 'bottom', rtl: true, textDirection: 'rtl', labels: { usePointStyle: true, padding: 16, font: { weight: '600' } } },
+    tooltip: { rtl: true, textDirection: 'rtl', padding: 10, bodyFont: { size: 13 }, titleFont: { size: 13, weight: '700' } }
+  });
+
+  function makeChart(id, cfg) {
+    if (charts[id]) charts[id].destroy();
+    charts[id] = new Chart($(id), cfg);
+  }
+
+  function renderCharts(d) {
+    const pieTotal = d.pieChartData.reduce((a, b) => a + b, 0) || 1;
+    makeChart('pieChart', {
+      type: 'doughnut',
+      data: {
+        labels: ['הלומדת המובנית/משימתית', 'הלומדת החוקרת'],
+        datasets: [{ data: d.pieChartData, backgroundColor: [C.indigo, C.green], borderColor: '#fff', borderWidth: 4, hoverOffset: 8 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '62%',
+        plugins: { ...rtlPlugins(), tooltip: { ...rtlPlugins().tooltip, callbacks: {
+          label: (c) => ` ${c.label}: ${c.raw} (${Math.round(c.raw / pieTotal * 100)}%)`
+        } } }
+      },
+      plugins: [{
+        id: 'center',
+        afterDraw(ch) {
+          const { ctx, chartArea: a } = ch; if (!a) return;
+          const x = (a.left + a.right) / 2, y = (a.top + a.bottom) / 2;
+          ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#1e293b'; ctx.font = "800 28px Assistant";
+          ctx.fillText(Math.round(d.pieChartData[1] / pieTotal * 100) + '%', x, y - 8);
+          ctx.fillStyle = '#64748b'; ctx.font = "600 12px Assistant";
+          ctx.fillText('חוקרות', x, y + 16); ctx.restore();
+        }
+      }]
+    });
+
+    makeChart('funnelChart', {
+      type: 'bar',
+      data: {
+        labels: [['רמה 1', 'תצפית'], ['רמה 2', 'פרשנות'], ['רמה 3', 'הקשר והעמקה']],
+        datasets: [{ label: 'מספר סטודנטיות', data: d.funnelData, backgroundColor: [C.blue, C.indigo, C.green], borderRadius: 10, maxBarThickness: 80 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: rtlPlugins(false),
+        scales: {
+          x: { reverse: true, grid: { display: false }, ticks: { font: { weight: '600' }, maxRotation: 0, autoSkip: false } },
+          y: { position: 'right', beginAtZero: true, grid: { color: C.grid }, ticks: { precision: 0 } }
+        }
+      }
+    });
+
+    makeChart('agencyChart', {
+      type: 'line',
+      data: {
+        labels: [['תחילת', 'שיחה'], 'רבע 1', 'אמצע', 'רבע 3', 'סיום'],
+        datasets: [{
+          label: 'מדד יזמה ועצמאות', data: d.agencyData, borderColor: C.indigo, borderWidth: 3, tension: 0.35, fill: true,
+          backgroundColor: (ctx) => {
+            const { chart } = ctx; const a = chart.chartArea; if (!a) return 'rgba(79,70,229,.1)';
+            const g = chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
+            g.addColorStop(0, 'rgba(79,70,229,.28)'); g.addColorStop(1, 'rgba(79,70,229,0)'); return g;
+          },
+          pointBackgroundColor: '#fff', pointBorderColor: C.indigo, pointBorderWidth: 3, pointRadius: 6, pointHoverRadius: 8
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: rtlPlugins(false),
+        scales: {
+          x: { reverse: true, grid: { display: false }, offset: true, ticks: { font: { weight: '600' }, maxRotation: 0, autoSkip: false } },
+          y: { position: 'right', min: 0, max: 100, grid: { color: C.grid }, ticks: { stepSize: 20 } }
+        }
+      }
+    });
+
+    const concepts = d.conceptData.length ? d.conceptData : [{ concept: 'לא זוהו מושגים', success: 0, fail: 0 }];
+    $('conceptBox').style.height = Math.max(300, concepts.length * 52 + 80) + 'px';
+    makeChart('conceptChart', {
+      type: 'bar',
+      data: {
+        labels: concepts.map(c => c.concept),
+        datasets: [
+          { label: 'הטמעה מוצלחת', data: concepts.map(c => c.success), backgroundColor: C.green, borderRadius: 6, maxBarThickness: 34 },
+          { label: 'קושי / חוסר הבנה', data: concepts.map(c => c.fail), backgroundColor: C.red, borderRadius: 6, maxBarThickness: 34 }
+        ]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { ...rtlPlugins(), tooltip: { ...rtlPlugins().tooltip, callbacks: { label: c => ` ${c.dataset.label}: ${c.raw}%` } } },
+        scales: {
+          x: { stacked: true, reverse: true, min: 0, max: 100, grid: { color: C.grid }, ticks: { callback: v => v + '%' } },
+          y: { stacked: true, position: 'right', grid: { display: false }, ticks: { font: { weight: '700' } } }
+        }
+      }
+    });
+  }
+
+  /* ================= RENDER ================= */
+  function renderAll() {
+    const has = !!state;
+    $('emptyState').classList.toggle('hidden', has);
+    $('dashboard').classList.toggle('hidden', !has);
+    const when = has ? new Date(state.updatedAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+    $('statusLine').textContent = `עובדו ${has ? state.count : 0} משובי סטודנטים | עדכון אחרון: ${when}${has && state.demo ? ' (נתוני הדגמה)' : ''}`;
+    $('printMeta').textContent = `מבוסס על ${has ? state.count : 0} משובי סטודנטים | הופק: ${new Date().toLocaleString('he-IL')}`;
+    if (!has) return;
+
+    const d = state.data;
+    renderCharts(d);
+
+    // KPI
+    const v = d.frictionLoops, high = v > 30;
+    const card = $('kpiCard');
+    card.className = `card rounded-2xl p-6 shadow-sm border-2 flex flex-col justify-between ${high ? 'bg-red-50 border-red-300 text-red-900' : v > 20 ? 'bg-orange-50 border-orange-300 text-orange-900' : 'bg-emerald-50 border-emerald-300 text-emerald-900'}`;
+    $('kpiValue').textContent = Math.round(v) + '%';
+    $('kpiBar').style.width = Math.min(100, v) + '%';
+    $('kpiBar').style.background = high ? C.red : v > 20 ? C.orange : C.green;
+    $('kpiNote').textContent = high
+      ? '⚠️ המדד גבוה מ-30% – מצביע על צורך בהגמשת הפיגומים של הבוט ובבחינת נקודות התקיעה בשיחה.'
+      : 'ℹ️ מדד מעל 30% מצביע על צורך בהגמשת הפיגומים. הרמה הנוכחית תקינה.';
+
+    // insights
+    const ol = $('insightsList'); ol.innerHTML = '';
+    const ins = d.insights.length ? d.insights.slice(0, 3) : ['לא התקבלו המלצות מה-AI.'];
+    ins.forEach((t, i) => {
+      const li = document.createElement('li');
+      li.className = 'flex gap-3 items-start bg-gradient-to-l from-brand-50 to-white border border-brand-100 rounded-xl p-4';
+      const n = document.createElement('span');
+      n.className = 'shrink-0 w-8 h-8 rounded-full bg-brand-600 text-white font-extrabold flex items-center justify-center';
+      n.textContent = i + 1;
+      const p = document.createElement('p'); p.className = 'leading-relaxed text-slate-700'; p.textContent = t;
+      li.append(n, p); ol.appendChild(li);
+    });
+
+    // quotes
+    const ql = $('quotesList'); ql.innerHTML = '';
+    const qs = d.quotes.length ? d.quotes : [{ text: 'לא נמצאו ציטוטים.', type: 'insight' }];
+    qs.forEach(q => {
+      const fr = q.type === 'friction';
+      const box = document.createElement('blockquote');
+      box.className = `relative rounded-xl p-4 pr-5 border-r-4 ${fr ? 'bg-orange-50 border-orange-500' : 'bg-blue-50 border-blue-500'}`;
+      const tag = document.createElement('span');
+      tag.className = `inline-block text-xs font-bold px-2 py-0.5 rounded-full mb-2 ${fr ? 'bg-orange-500 text-white' : 'bg-blue-500 text-white'}`;
+      tag.textContent = fr ? 'חיכוך / תסכול' : 'תובנה / פרשנות עצמאית';
+      const p = document.createElement('p');
+      p.className = `leading-relaxed font-medium ${fr ? 'text-orange-900' : 'text-blue-900'}`;
+      p.textContent = `"${q.text.replace(/^["״“”]+|["״“”]+$/g, '')}"`;
+      box.append(tag, p); ql.appendChild(box);
+    });
+
+    $('filesNote').textContent = state.files && state.files.length
+      ? `קבצים במאגר (${state.files.length}): ${state.files.slice(0, 12).join(' • ')}${state.files.length > 12 ? ' …' : ''}`
+      : '';
+  }
+
+  /* ================= TABS ================= */
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === btn.dataset.tab));
+      requestAnimationFrame(() => Object.values(charts).forEach(c => c.resize()));
+    });
+  });
+
+  /* ================= UPLOAD MENU ================= */
+  $('uploadBtn').addEventListener('click', (e) => { e.stopPropagation(); $('uploadMenu').classList.toggle('hidden'); });
+  document.addEventListener('click', (e) => { if (!$('uploadWrap').contains(e.target)) $('uploadMenu').classList.add('hidden'); });
+  document.querySelectorAll('.upload-opt').forEach(b => b.addEventListener('click', () => {
+    uploadMode = b.dataset.mode;
+    if (uploadMode === 'append' && !state) toast('המאגר ריק – הקבצים ינותחו כקורס חדש.', 'info');
+    if (uploadMode === 'append' && state && state.demo) { uploadMode = 'reset'; toast('נתוני ההדגמה יוחלפו בנתונים האמיתיים.', 'info'); }
+    $('uploadMenu').classList.add('hidden');
+    $('fileInput').value = '';
+    $('fileInput').click();
+  }));
+  $('emptyUpload').addEventListener('click', () => { uploadMode = 'reset'; $('fileInput').value = ''; $('fileInput').click(); });
+  $('fileInput').addEventListener('change', (e) => handleFiles(e.target.files));
+
+  // drag & drop anywhere
+  ['dragover', 'drop'].forEach(ev => document.addEventListener(ev, e => e.preventDefault()));
+  document.addEventListener('drop', (e) => {
+    if (!e.dataTransfer?.files?.length) return;
+    uploadMode = state && !state.demo ? 'append' : 'reset';
+    toast(uploadMode === 'append' ? 'הקבצים יתווספו למאגר הקיים.' : 'מתחיל ניתוח קורס חדש.', 'info');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  /* ================= SETTINGS ================= */
+  const KNOWN_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  function settingsMsg(text, type) {
+    const el = $('settingsMsg');
+    if (!text) { el.classList.add('hidden'); return; }
+    el.className = `text-sm rounded-xl p-3 ${type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-brand-50 text-brand-700 border border-brand-200'}`;
+    el.textContent = text;
+  }
+  function selectedModel() {
+    return $('modelSelect').value === 'custom' ? $('customModel').value.trim() : $('modelSelect').value;
+  }
+  function openSettings(msg) {
+    $('apiKeyInput').value = getKey();
+    const m = getModel();
+    if (KNOWN_MODELS.includes(m)) { $('modelSelect').value = m; $('customModel').classList.add('hidden'); }
+    else { $('modelSelect').value = 'custom'; $('customModel').value = m; $('customModel').classList.remove('hidden'); }
+    settingsMsg(msg || '', 'info');
+    wipeArmed = false; $('wipeData').textContent = 'מחיקת כל נתוני הדשבורד מהדפדפן';
+    $('settingsModal').classList.remove('hidden');
+    setTimeout(() => $('apiKeyInput').focus(), 50);
+  }
+  function updateKeyDot() {
+    const ok = !!getKey();
+    $('keyDot').className = `w-2.5 h-2.5 rounded-full ${ok ? 'bg-emerald-400' : 'bg-orange-400'}`;
+    $('keyDot').title = ok ? 'מפתח מוגדר' : 'מפתח לא הוגדר';
+  }
+  $('settingsBtn').onclick = () => openSettings();
+  $('settingsClose').onclick = () => $('settingsModal').classList.add('hidden');
+  $('settingsModal').addEventListener('click', e => { if (e.target.id === 'settingsModal') $('settingsModal').classList.add('hidden'); });
+  $('modelSelect').onchange = () => $('customModel').classList.toggle('hidden', $('modelSelect').value !== 'custom');
+  $('toggleKey').onclick = () => { const i = $('apiKeyInput'); i.type = i.type === 'password' ? 'text' : 'password'; };
+  $('saveKey').onclick = () => {
+    const k = $('apiKeyInput').value.trim(), m = selectedModel();
+    if (!k) return settingsMsg('נא להזין מפתח API.', 'error');
+    if (!m) return settingsMsg('נא להזין שם מודל.', 'error');
+    if (!store.set(LS_KEY, k) || !store.set(LS_MODEL, m)) return settingsMsg('הדפדפן חוסם שמירה מקומית (localStorage). נסו חלון רגיל שאינו גלישה פרטית.', 'error');
+    updateKeyDot();
+    settingsMsg('ההגדרות נשמרו בהצלחה.', 'success');
+    toast('הגדרות ה-API נשמרו.', 'success');
+    setTimeout(() => $('settingsModal').classList.add('hidden'), 900);
+  };
+  $('testKey').onclick = async () => {
+    const k = $('apiKeyInput').value.trim(), m = selectedModel();
+    if (!k) return settingsMsg('נא להזין מפתח API לבדיקה.', 'error');
+    settingsMsg('בודק חיבור ל-Gemini...', 'info');
+    $('testKey').disabled = true;
+    try {
+      await callGemini([{ text: 'Reply with the single word: OK' }], { json: false, key: k, model: m });
+      settingsMsg(`החיבור תקין ✓ (מודל: ${m})`, 'success');
+    } catch (e) { settingsMsg(e.message, 'error'); }
+    finally { $('testKey').disabled = false; }
+  };
+  $('clearKey').onclick = () => {
+    store.del(LS_KEY); $('apiKeyInput').value = ''; updateKeyDot();
+    settingsMsg('המפתח נמחק מהדפדפן.', 'success');
+  };
+  let wipeArmed = false;
+  $('wipeData').onclick = () => {
+    if (!wipeArmed) { wipeArmed = true; $('wipeData').textContent = 'לחצו שוב לאישור המחיקה'; return; }
+    state = null; saveState(); renderAll();
+    wipeArmed = false; $('wipeData').textContent = 'מחיקת כל נתוני הדשבורד מהדפדפן';
+    settingsMsg('נתוני הדשבורד נמחקו.', 'success');
+  };
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { $('settingsModal').classList.add('hidden'); if (!busy) overlay.hide(); }
+  });
+
+  /* ================= PDF EXPORT ================= */
+  // html2canvas draws glyphs one by one and loses bidi mirroring of brackets in RTL text.
+  // Swapping ( <-> ) before capture (and again after) yields the correct visual result.
+  function swapParens(root) {
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = w.nextNode())) {
+      if (/[()]/.test(n.nodeValue)) n.nodeValue = n.nodeValue.replace(/[()]/g, c => c === '(' ? ')' : '(');
+    }
+  }
+
+  $('exportBtn').addEventListener('click', async () => {
+    if (!state) { toast('אין עדיין נתונים לייצוא. העלו משובים תחילה.', 'warn'); return; }
+    if (busy) return;
+    busy = true;
+    overlay.show('מייצא לדוח PDF', 'מכין את כל הלשוניות לייצוא...');
+    const animBackup = {};
+    try {
+      document.body.classList.add('exporting');
+      // html2canvas mis-measures offsets in an RTL root: make the root LTR and keep the report itself RTL
+      document.documentElement.setAttribute('dir', 'ltr');
+      $('report').setAttribute('dir', 'rtl');
+      swapParens($('report'));
+      window.scrollTo(0, 0);
+      $('conceptBox').style.height = Math.min(parseInt($('conceptBox').style.height) || 300, 420) + 'px';
+      Object.entries(charts).forEach(([k, c]) => { animBackup[k] = c.options.animation; c.options.animation = false; });
+      // let the browser reflow into the page-width layout, then fit every chart to its new box
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      Object.values(charts).forEach(c => {
+        c.stop();                                  // cancel any running entrance/resize animation
+        c.options.devicePixelRatio = 2;
+        c.resize();
+        c.update('none');                          // redraw final state, no animation
+        c.stop(); c.draw();
+      });
+      await sleep(250);
+      // replace each live canvas with a static image snapshot (html2pdf clones canvases unreliably)
+      Object.values(charts).forEach(c => {
+        const cv = c.canvas, img = new Image();
+        img.className = 'chart-snapshot';
+        img.src = c.toBase64Image('image/png', 1);
+        img.style.width = cv.clientWidth + 'px';
+        img.style.height = cv.clientHeight + 'px';
+        img.style.maxWidth = 'none';
+        cv.style.display = 'none';
+        cv.after(img);
+      });
+      await sleep(150);
+      overlay.text('יוצר את קובץ ה-PDF...');
+      const stamp = new Date().toISOString().slice(0, 10);
+      await html2pdf().set({
+        margin: [6, 6, 6, 6],
+        filename: `botkol-report-${stamp}.pdf`,
+        image: { type: 'jpeg', quality: 0.96 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#f1f5f9', windowWidth: 1077, scrollX: 0, scrollY: 0, x: 0, y: 0 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+        pagebreak: { mode: ['css', 'avoid-all'], before: '.html2pdf__page-break-before' }
+      }).from($('report')).save();
+      overlay.result('success', 'הדוח יוצא בהצלחה', 'קובץ ה-PDF הורד למחשב שלכם.');
+      setTimeout(() => { if ($('ovIcon').textContent === '✅') overlay.hide(); }, 2000);
+    } catch (e) {
+      overlay.result('error', 'הייצוא נכשל', e.message || 'שגיאה ביצירת קובץ ה-PDF.');
+    } finally {
+      document.body.classList.remove('exporting');
+      document.documentElement.setAttribute('dir', 'rtl');
+      $('report').removeAttribute('dir');
+      swapParens($('report'));
+      if (state) $('conceptBox').style.height = Math.max(300, (state.data.conceptData.length || 1) * 52 + 80) + 'px';
+      document.querySelectorAll('.chart-snapshot').forEach(i => i.remove());
+      Object.entries(charts).forEach(([k, c]) => {
+        c.canvas.style.display = '';
+        c.options.animation = animBackup[k];
+        delete c.options.devicePixelRatio;
+        c.resize();
+      });
+      busy = false;
+    }
+  });
+
+  /* ================= DEMO DATA ================= */
+  $('demoBtn').addEventListener('click', () => {
+    state = {
+      demo: true, count: 24, updatedAt: new Date().toISOString(), files: [],
+      data: {
+        pieChartData: [14, 10],
+        funnelData: [24, 17, 8],
+        agencyData: [28, 41, 55, 63, 72],
+        conceptData: [
+          { concept: 'מספר ונקודת מבט', success: 72, fail: 28 },
+          { concept: 'מוטיב', success: 65, fail: 35 },
+          { concept: 'אירוניה', success: 38, fail: 62 },
+          { concept: 'עיצוב דמות', success: 80, fail: 20 },
+          { concept: 'סמל ומטאפורה', success: 52, fail: 48 },
+          { concept: 'זמן סיפורי', success: 44, fail: 56 }
+        ],
+        frictionLoops: 34,
+        quotes: [
+          { type: 'insight', text: 'פתאום הבנתי שהמספר בעצם לא אמין – הוא מספר לנו רק את מה שנוח לו לזכור.' },
+          { type: 'friction', text: 'אתה שוב שואל אותי את אותה שאלה, תגיד לי כבר מה התשובה.' },
+          { type: 'insight', text: 'החלון שחוזר בכל סצנה הוא כמו הגבול בין העולם הפנימי שלה לבין החברה.' }
+        ],
+        insights: [
+          'לפתוח את השיעור הבא בהדגמה משותפת של זיהוי אירוניה – זהו המושג עם שיעור הקושי הגבוה ביותר.',
+          'מדד החיכוך עומד על 34%: מומלץ להוסיף לבוט "רמזים מדורגים" כדי לצמצם לולאות שאלה חוזרות אצל לומדות משימתיות.',
+          'רק שליש מהסטודנטיות הגיעו לרמת ההקשר וההעמקה – כדאי לבנות משימת מליאה המחברת את הטקסט להקשר ההיסטורי שלו.'
+        ]
+      }
+    };
+    renderAll();
+    toast('מוצגים נתוני הדגמה. העלאת קבצים אמיתיים תחליף אותם.', 'info');
+  });
+
+  /* ================= INIT ================= */
+  updateKeyDot();
+  if (state && state.demo) state = null;
+  renderAll();
+  if (state) toast(`נטענו ${state.count} משובים שמורים מהמאגר המקומי.`, 'info', 3500);
+})();
+</script>
 </body>
 </html>
