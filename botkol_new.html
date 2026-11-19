@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>בוט-קול | דשבורד מרצים</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- ספריית PDF.js לחילוץ טקסט מהיר מקומית בדפדפן (עובד גם מקובץ מקומי file://) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Assistant', sans-serif; background-color: #f3f4f6; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .dropdown-container:hover .dropdown-menu { display: block; }
+        .dropdown-menu { display: none; top: 100%; padding-top: 0.5rem; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- מסך טעינה -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-blue-900 bg-opacity-95 z-50 flex flex-col items-center justify-center hidden transition-opacity duration-300 px-4">
+        <div id="loadingSpinner" class="loader mb-4 border-4 border-blue-400 border-t-white rounded-full w-12 h-12 animate-spin"></div>
+        <div id="loadingText" class="text-white text-xl font-bold text-center flex flex-col items-center max-w-lg">
+            מעבד נתונים...
+        </div>
+        <button id="cancelUploadBtn" onclick="cancelCurrentUpload()" class="mt-6 px-5 py-2 bg-white bg-opacity-15 hover:bg-opacity-25 text-white border border-white border-opacity-40 rounded-lg text-sm font-semibold transition-colors">
+            ביטול פעולה
+        </button>
+    </div>
+
+    <!-- חלון הגדרות API Key -->
+    <div id="apiModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden px-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h2 class="text-xl font-bold text-blue-900 mb-2">הגדרות מפתח Gemini API</h2>
+            <p class="text-sm text-gray-600 mb-4">הדביקי כאן את מפתח ה-API שלך מ-Google AI Studio. המפתח נשמר מקומית בדפדפן שלך בלבד.</p>
+            <input type="password" id="apiKeyInput" placeholder="AIzaSy..." class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-left dir-ltr focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4">
+            <div class="flex justify-end gap-3">
+                <button onclick="closeApiModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-semibold">ביטול</button>
+                <button onclick="saveApiKey()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold">שמור מפתח</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8" id="dashboard-content">
+        <!-- כותרת עליונה -->
+        <div class="bg-white rounded-xl shadow-sm p-6 mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-blue-900">בוט-קול | דשבורד אנליטיקת למידה למרצים</h1>
+                <p class="text-gray-500 mt-1">מאגר משובים | עובדו <span id="reportCount" class="font-bold text-blue-600">0</span> משובי סטודנטים | עדכון אחרון: <span id="lastUpdate">-</span></p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 relative header-actions">
+                <button onclick="openApiModal()" class="text-gray-600 hover:text-blue-700 bg-gray-100 hover:bg-blue-50 px-3 py-2 rounded-lg font-semibold flex items-center gap-1.5 text-sm transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                    הגדרות API
+                </button>
+                <button onclick="exportPDF()" class="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-2 text-sm px-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    ייצוא לדוח PDF
+                </button>
+                <div class="relative dropdown-container">
+                    <button class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-semibold shadow-sm transition-colors flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        העלאת משובי סטודנטים
+                    </button>
+                    <div class="dropdown-menu absolute left-0 w-full z-10">
+                        <div class="bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden">
+                            <button onclick="triggerUpload('new')" class="w-full text-right px-4 py-3 hover:bg-blue-50 text-gray-700 text-sm font-semibold border-b">ניתוח קורס חדש (איפוס)</button>
+                            <button onclick="triggerUpload('append')" class="w-full text-right px-4 py-3 hover:bg-blue-50 text-gray-700 text-sm font-semibold">הוסף למאגר הקיים</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- לשוניות ניווט -->
+        <div class="bg-white rounded-xl shadow-sm mb-6 overflow-hidden">
+            <div class="flex border-b border-gray-200">
+                <button onclick="switchTab('tab1')" class="tab-btn flex-1 py-4 text-center font-semibold text-blue-600 border-b-2 border-blue-600 transition-colors">מצב הכיתה וסוכנות הלומדת</button>
+                <button onclick="switchTab('tab2')" class="tab-btn flex-1 py-4 text-center font-semibold text-gray-500 border-b-2 border-transparent hover:text-blue-500 transition-colors">ניתוח מושגים וחיכוך פדגוגי</button>
+                <button onclick="switchTab('tab3')" class="tab-btn flex-1 py-4 text-center font-semibold text-gray-500 border-b-2 border-transparent hover:text-blue-500 transition-colors">תובנות להוראה (AI)</button>
+            </div>
+        </div>
+
+        <!-- לשונית 1 -->
+        <div id="tab1" class="tab-content active">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h3 class="font-bold text-lg mb-4 text-gray-700">טיפולוגיית לומדות</h3>
+                    <div class="h-64"><canvas id="pieChart"></canvas></div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h3 class="font-bold text-lg mb-4 text-gray-700">הגעה לרמות חשיבה ספרותית</h3>
+                    <div class="h-64"><canvas id="funnelChart"></canvas></div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm md:col-span-2 lg:col-span-1">
+                    <h3 class="font-bold text-lg mb-4 text-gray-700">מדד יזמה ועצמאות (לאורך השיחה)</h3>
+                    <div class="h-64"><canvas id="agencyChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- לשונית 2 -->
+        <div id="tab2" class="tab-content">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white p-6 rounded-xl shadow-sm md:col-span-2">
+                    <h3 class="font-bold text-lg mb-4 text-gray-700">הטמעת מושגי יסוד</h3>
+                    <div class="h-80"><canvas id="conceptChart"></canvas></div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col justify-center items-center text-center border-t-4 border-orange-400">
+                    <h3 class="font-bold text-lg mb-2 text-gray-700">מדד חיכוך פדגוגי (Loops)</h3>
+                    <p class="text-sm text-gray-500 mb-6">שיעור המקרים בהם זוהה חוסר סבלנות או שהבוט חזר על עצמו</p>
+                    <div class="text-6xl font-black text-orange-500 mb-2" id="frictionScore">0%</div>
+                    <p class="text-sm text-gray-600 mt-4 px-4">מדד גבוה מ-30% מצביע על צורך בהגמשת הפיגומים והמבנה.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- לשונית 3 -->
+        <div id="tab3" class="tab-content">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h3 class="font-bold text-lg mb-4 text-gray-700 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z"></path></svg>
+                        מנוע החלטות פדגוגיות (מבוסס AI)
+                    </h3>
+                    <div class="space-y-4" id="insightsContainer">
+                        <div class="p-4 bg-gray-50 rounded-lg text-gray-500 text-center">העלי משובים כדי לצפות בתובנות ה-AI...</div>
+                    </div>
+                </div>
+                
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h3 class="font-bold text-lg mb-4 text-gray-700 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                        "יהלומים" לדיון במליאה
+                    </h3>
+                    <div class="space-y-4" id="quotesContainer">
+                        <div class="p-4 bg-gray-50 rounded-lg text-gray-500 text-center">העלי משובים כדי לאתר ציטוטים בולטים...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mockData = { totalReports: 0, lastUpdate: '-', pieChartData: [0, 0], funnelData: [0, 0, 0], agencyData: [0, 0, 0, 0, 0], conceptData: [], frictionLoops: 0, quotes: [], insights: [] };
+        let currentAbortController = null;
+
+        function openApiModal() {
+            document.getElementById('apiKeyInput').value = localStorage.getItem('gemini_api_key') || '';
+            document.getElementById('apiModal').classList.remove('hidden');
+        }
+
+        function closeApiModal() {
+            document.getElementById('apiModal').classList.add('hidden');
+        }
+
+        function saveApiKey() {
+            const key = document.getElementById('apiKeyInput').value.trim();
+            if (key) {
+                localStorage.setItem('gemini_api_key', key);
+                closeApiModal();
+            }
+        }
+
+        function cancelCurrentUpload() {
+            if (currentAbortController) {
+                currentAbortController.abort();
+                currentAbortController = null;
+            }
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+
+        // חילוץ טקסט מהיר מקובץ PDF מקומית בדפדפן
+        async function extractTextFromPDF(file) {
+            try {
+                if (typeof pdfjsLib === 'undefined') return null;
+                const arrayBuffer = await file.arrayBuffer();
+                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                const pdf = await loadingTask.promise;
+                let fullText = '';
+                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                    const page = await pdf.getPage(pageNum);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    fullText += pageText + '\n';
+                }
+                const cleaned = fullText.replace(/\s+/g, ' ').trim();
+                // אם יש פחות מ-50 תווים, כנראה שזה קובץ סרוק כתמונה -> נחזיר null כדי להשתמש בגיבוי
+                return cleaned.length >= 50 ? cleaned : null;
+            } catch (err) {
+                console.warn('חילוץ טקסט נכשל עבור', file.name, '- עובר לשליחה כקובץ PDF מלא:', err);
+                return null;
+            }
+        }
+
+        function triggerUpload(type) {
+            const apiKey = localStorage.getItem('gemini_api_key');
+            if (!apiKey) {
+                openApiModal();
+                return;
+            }
+
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.multiple = true;
+            input.accept = '.pdf';
+            
+            input.onchange = async (e) => {
+                const files = Array.from(e.target.files);
+                if(files.length > 0) {
+                    const loadingOverlay = document.getElementById('loadingOverlay');
+                    const loadingText = document.getElementById('loadingText');
+                    const spinner = document.getElementById('loadingSpinner');
+                    const cancelBtn = document.getElementById('cancelUploadBtn');
+                    
+                    currentAbortController = new AbortController();
+                    loadingOverlay.style.display = 'flex';
+                    spinner.style.display = 'block';
+                    cancelBtn.style.display = 'inline-block';
+                    
+                    try {
+                        // שלב 1: חילוץ טקסט מהיר בדפדפן
+                        const parts = [
+                            {
+                                text: `תפקיד: אתה מנתח נתונים פדגוגי. קיבלת תמלולי שיחות של סטודנטיות מול בוט לניתוח טקסטים ספרותיים.
+עליך לנתח את השיחות על בסיס 4 מדדים: סוכנות לומד, עומק חשיבה ספרותית, חיכוך פדגוגי, וטיפולוגיית לומדות.
+החזר את התשובה *אך ורק* כאובייקט JSON חוקי המכיל את המפתחות הבאים, ללא שום טקסט מקדים או עוקב:
+1. pieChartData: מערך של 2 מספרים [כמות הלומדות המובניות, כמות הלומדות החוקרות].
+2. funnelData: מערך של 3 מספרים [כמה הגיעו לרמת תצפית, כמה לרמת פרשנות, כמה לרמת העמקה].
+3. agencyData: מערך של 5 מספרים (0-100) המייצג את התפתחות רמת היזמה לאורך השיחות.
+4. conceptData: מערך של אובייקטים למושגים שעלו בשיחה. כל אובייקט יכיל concept (שם המושג), success (אחוז הבנה 0-100), ו-fail (אחוז קושי 0-100).
+5. frictionLoops: מספר (0-100) המייצג את אחוז החיכוך.
+6. quotes: מערך של 3 ציטוטים נבחרים (אובייקטים עם text ו-type מסוג "insight" לפרשנות או "friction" לתסכול).
+7. insights: מערך של 3 תובנות פדגוגיות מילוליות למרצה.`
+                            }
+                        ];
+
+                        let extractedCount = 0;
+                        let fallbackPdfCount = 0;
+
+                        for (let i = 0; i < files.length; i++) {
+                            const file = files[i];
+                            loadingText.innerHTML = `<span class="text-2xl font-bold mb-2">שלב 1 מתוך 2: קורא משובים (${i + 1}/${files.length})</span><span class="text-base font-normal text-blue-200">מחלץ טקסט מהיר מהקובץ ${file.name}...</span>`;
+                            
+                            const text = await extractTextFromPDF(file);
+                            if (text) {
+                                extractedCount++;
+                                parts.push({
+                                    text: `\n--- תמלול משוב #${i + 1} (${file.name}) ---\n${text}`
+                                });
+                            } else {
+                                // גיבוי אוטומטי לקבצים סרוקים
+                                fallbackPdfCount++;
+                                const base64Obj = await getBase64(file);
+                                parts.push({
+                                    inline_data: {
+                                        mime_type: "application/pdf",
+                                        data: base64Obj.base64
+                                    }
+                                });
+                            }
+                        }
+
+                        // שלב 2: שליחה מהירה ל-Gemini
+                        const modeNote = fallbackPdfCount === 0
+                            ? `מצב מהיר פעיל (${extractedCount} קבצים חולצו לטקסט נקי)`
+                            : `מנתח ${extractedCount} קובצי טקסט ו-${fallbackPdfCount} קבצים סרוקים`;
+
+                        loadingText.innerHTML = `<span class="text-2xl font-bold mb-2">שלב 2 מתוך 2: מנתח תובנות ב-Gemini AI...</span><span class="text-base font-normal text-blue-200">${modeNote}</span>`;
+
+                        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            signal: currentAbortController.signal,
+                            body: JSON.stringify({
+                                contents: [{ parts }],
+                                generationConfig: { response_mime_type: "application/json" }
+                            })
+                        });
+                        
+                        const jsonResponse = await response.json();
+                        if (jsonResponse.error) {
+                            throw new Error(jsonResponse.error.message || 'שגיאה בתקשורת מול Gemini');
+                        }
+                        
+                        let rawText = jsonResponse.candidates[0].content.parts[0].text;
+                        rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                        const aiData = JSON.parse(rawText);
+                        
+                        Object.assign(mockData, aiData);
+                        mockData.totalReports = type === 'new' ? files.length : mockData.totalReports + files.length;
+                        
+                        const now = new Date();
+                        mockData.lastUpdate = now.toLocaleDateString('he-IL') + " " + now.toLocaleTimeString('he-IL', {hour: '2-digit', minute:'2-digit'});
+                        
+                        document.getElementById('reportCount').innerText = mockData.totalReports;
+                        document.getElementById('lastUpdate').innerText = mockData.lastUpdate;
+                        
+                        if (pieChart) pieChart.destroy();
+                        if (funnelChart) funnelChart.destroy();
+                        if (agencyChart) agencyChart.destroy();
+                        if (conceptChart) conceptChart.destroy();
+                        
+                        initCharts();
+                        populateTextData();
+                        if (window.saveDashboardToFirebase) {
+                            window.saveDashboardToFirebase(mockData);
+                        }
+                        
+                        spinner.style.display = 'none';
+                        cancelBtn.style.display = 'none';
+                        loadingText.innerHTML = `<span class="text-3xl font-black text-green-400 mb-2">הושלם בהצלחה!</span><span class="text-lg text-white">עובדו ${files.length} משובים.</span>`;
+                        setTimeout(() => { loadingOverlay.style.display = 'none'; }, 1500);
+
+                    } catch (error) {
+                        if (error.name === 'AbortError') {
+                            console.log('הפעולה בוטלה על ידי המשתמשת.');
+                            return;
+                        }
+                        console.error('שגיאה:', error);
+                        spinner.style.display = 'none';
+                        cancelBtn.style.display = 'none';
+                        loadingText.innerHTML = `<span class="text-3xl font-black text-red-400 mb-2">אופס, משהו השתבש</span><span class="text-base font-normal text-white mt-2">${error.message}</span>`;
+                        setTimeout(() => { loadingOverlay.style.display = 'none'; }, 4500);
+                    } finally {
+                        currentAbortController = null;
+                    }
+                }
+            };
+            input.click();
+        }
+
+        function getBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    let encoded = reader.result.toString().replace(/^data:(.*,)?/, '');
+                    if ((encoded.length % 4) > 0) encoded += '='.repeat(4 - (encoded.length % 4));
+                    resolve({ name: file.name, base64: encoded });
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        let pieChart, funnelChart, agencyChart, conceptChart;
+
+        function initCharts() {
+            if(mockData.totalReports === 0) return;
+            const ctxPie = document.getElementById('pieChart').getContext('2d');
+            pieChart = new Chart(ctxPie, { type: 'doughnut', data: { labels: ['הלומדת המובנית', 'הלומדת החוקרת'], datasets: [{ data: mockData.pieChartData || [0, 0], backgroundColor: ['#3b82f6', '#10b981'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Assistant' } } } } } });
+
+            const ctxFunnel = document.getElementById('funnelChart').getContext('2d');
+            const funnelValues = mockData.funnelData || [0, 0, 0];
+            funnelChart = new Chart(ctxFunnel, { type: 'bar', data: { labels: ['רמה 1: תצפית', 'רמה 2: פרשנות', 'רמה 3: העמקה'], datasets: [{ label: 'כמות לומדות', data: funnelValues, backgroundColor: '#6366f1', borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: Math.max(...funnelValues, 5) } }, plugins: { legend: { display: false } } } });
+
+            const ctxAgency = document.getElementById('agencyChart').getContext('2d');
+            agencyChart = new Chart(ctxAgency, { type: 'line', data: { labels: ['תחילת שיחה', 'רבע 1', 'אמצע', 'רבע 3', 'סיום'], datasets: [{ label: 'מורכבות פרומפט ויזמה', data: mockData.agencyData || [0, 0, 0, 0, 0], borderColor: '#10b981', tension: 0.4, fill: true, backgroundColor: 'rgba(16, 185, 129, 0.1)' }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } } });
+
+            const ctxConcept = document.getElementById('conceptChart').getContext('2d');
+            const concepts = mockData.conceptData || [];
+            conceptChart = new Chart(ctxConcept, { type: 'bar', data: { labels: concepts.map(d => d.concept), datasets: [{ label: 'הטמעה מוצלחת', data: concepts.map(d => d.success), backgroundColor: '#10b981' }, { label: 'קושי', data: concepts.map(d => d.fail), backgroundColor: '#ef4444' }] }, options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { stacked: true, max: 100 }, y: { stacked: true } } } });
+        }
+
+        function populateTextData() {
+            if(mockData.totalReports === 0) return;
+            document.getElementById('frictionScore').innerText = (mockData.frictionLoops || 0) + "%";
+            
+            const quotesContainer = document.getElementById('quotesContainer');
+            quotesContainer.innerHTML = '';
+            (mockData.quotes || []).forEach(q => {
+                const div = document.createElement('div');
+                div.className = `p-4 rounded-md text-sm border-r-4 ${q.type === 'insight' ? 'bg-blue-50 border-blue-500' : 'bg-orange-50 border-orange-500'}`;
+                div.innerHTML = `"${q.text}"`;
+                quotesContainer.appendChild(div);
+            });
+
+            const insightsContainer = document.getElementById('insightsContainer');
+            insightsContainer.innerHTML = '';
+            (mockData.insights || []).forEach(insight => {
+                const div = document.createElement('div');
+                div.className = 'p-3 bg-gray-50 rounded-md text-sm border border-gray-100 flex items-start gap-2';
+                div.innerHTML = `<span class="text-blue-500 font-bold">•</span><span>${insight}</span>`;
+                insightsContainer.appendChild(div);
+            });
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => { el.classList.remove('border-blue-600', 'text-blue-600'); el.classList.add('border-transparent', 'text-gray-500'); });
+            document.getElementById(tabId).classList.add('active');
+            const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.getAttribute('onclick').includes(tabId));
+            if(activeBtn) { activeBtn.classList.remove('border-transparent', 'text-gray-500'); activeBtn.classList.add('border-blue-600', 'text-blue-600'); }
+        }
+
+        async function exportPDF() {
+            const element = document.getElementById('dashboard-content');
+            const headerActions = document.querySelector('.header-actions');
+            try {
+                headerActions.style.display = 'none';
+                const opt = { margin: 10, filename: 'דוח_מרצים.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' } };
+                await html2pdf().set(opt).from(element).save();
+            } catch (error) { console.error(error); } finally { setTimeout(() => { headerActions.style.display = 'flex'; }, 3000); }
+        }
+    </script>
+
+    <!-- חיבור Firebase Firestore -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDZlP_rjZHdFrLHhg0SJYS1j8mA5QakHEo",
+            authDomain: "bot-kol-c4b19.firebaseapp.com",
+            projectId: "bot-kol-c4b19",
+            storageBucket: "bot-kol-c4b19.firebasestorage.app",
+            messagingSenderId: "232146391845",
+            appId: "1:232146391845:web:f86eec2138634c1fc2c0cc",
+            measurementId: "G-K5SQDH2SZS"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.saveDashboardToFirebase = async function(dataToSave) {
+            try {
+                await setDoc(doc(db, "botkol_dashboard", "latest_state"), dataToSave);
+                console.log("נתוני הדשבורד נשמרו בענן בהצלחה!");
+            } catch (e) {
+                console.error("שגיאה בשמירה ל-Firebase:", e);
+            }
+        };
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const docSnap = await getDoc(doc(db, "botkol_dashboard", "latest_state"));
+                if (docSnap.exists() && typeof mockData !== 'undefined') {
+                    Object.assign(mockData, docSnap.data());
+                    document.getElementById('reportCount').innerText = mockData.totalReports;
+                    document.getElementById('lastUpdate').innerText = mockData.lastUpdate;
+                    if (typeof initCharts === 'function') initCharts();
+                    if (typeof populateTextData === 'function') populateTextData();
+                }
+            } catch (e) {
+                console.warn("טרם נשמרו נתונים בענן:", e);
+            }
+        });
+    </script>
+</body>
+</html>
